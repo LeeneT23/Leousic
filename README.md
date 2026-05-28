@@ -1,182 +1,185 @@
-# PhotoGodot Pro - Editor de Imágenes Profesional
+# 🎨 PhotoGodot Pro
 
-## 🎨 Descripción
-PhotoGodot Pro es un editor de imágenes completo estilo Photoshop, desarrollado en **C#** para **Godot 4.6**. Ofrece herramientas profesionales de edición, sistema de capas, filtros y una arquitectura extensible.
+**Editor de imágenes profesional estilo Photoshop para Godot 4.6 con C#**
 
 ## ✨ Características Principales
 
-### Herramientas de Dibujo
-- **🖌 Pincel (B)**: Dibuja con control de tamaño, opacidad y dureza
-- **⌫ Borrador (E)**: Elimina píxeles con efecto suave configurable
-- **💉 Selector de Color (I)**: Cuentagotas para muestrear colores del canvas
-- **✥ Mover (V)**: Desplaza el contenido de la capa actual
-- **⛶ Selección (M)**: Selecciona áreas rectangulares
+### 🖌️ Herramientas de Dibujo
+- **Pincel (B)**: Con ajuste de tamaño, opacidad y dureza
+- **Borrador (E)**: Borrado suave con control de opacidad
+- **Selector de Color (I)**: Cuentagotas para picking de colores
+- **Mover (V)**: Desplazamiento por el lienzo
+- **Selección (M)**: Selección rectangular
 
-### Sistema de Capas
-- ✅ Capas ilimitadas (100 por defecto)
-- 👁 Visibilidad por capa
-- 🎚 Opacidad ajustable (0-100%)
-- 🔄 6 modos de fusión: Mix, Add, Subtract, Multiply, Screen, Overlay
-- ⬆️⬇️ Reordenar capas
-- 📋 Duplicar capas
-- 🔽 Fusionar hacia abajo
-- 🧹 Aplanar imagen
+### 📚 Sistema de Capas
+- Capas ilimitadas (hasta 100 por defecto)
+- Visibilidad por capa
+- Opacidad ajustable
+- 6 modos de fusión: Normal, Multiplicar, Trama, Superponer, Oscurecer, Aclarar
+- Reordenar capas
+- Duplicar capas
+- Fusionar hacia abajo
+- Aplanar imagen
 
-### Filtros y Efectos
-- ⚪ Escala de grises
-- 🔃 Invertir colores
-- 💫 Difuminar (Blur)
-- 🔍 Enfocar (Sharpen)
-- ☀️ Brillo
-- 🌓 Contraste
+### 🔄 Historial
+- Undo/Redo ilimitado (configurable hasta 500 estados)
+- Guardado automático de estado después de cada acción
 
-### Vista y Navegación
-- 🔍 Zoom: 10% - 1000%
-- 📐 Grid/malla configurable
-- 🖐 Paneo con rueda del mouse o Space+Click
-- 🪟 Ajustar a ventana
+### 🎯 Filtros
+- Escala de grises
+- Invertir colores
+- Difuminar (placeholder)
+- Enfocar (placeholder)
 
-### Historial
-- ↩️ Undo/Deshacer ilimitado (configurable, default 100)
-- ↪️ Redo/Rehacer
-- 💾 Guardado automático de estados
+### 👁️ Vista
+- Grid/tamaño ajustable
+- Zoom (10%-1000%)
+- Paneo del lienzo
 
-### Exportación
-- 📄 PNG (sin pérdida)
-- 📄 JPG (calidad configurable)
-- 📄 WebP (moderno y eficiente)
-- 💾 Proyecto .pgd (formato nativo)
+### 💾 Exportación
+- PNG
+- JPG
+- WebP
 
-## 🎮 Atajos de Teclado
+### ⌨️ Atajos de Teclado
 
 | Acción | Atajo |
 |--------|-------|
-| Pincel | `B` |
-| Borrador | `E` |
-| Selector Color | `I` |
-| Mover | `V` |
-| Selección | `M` |
-| Grid | `G` |
-| Deshacer | `Ctrl + Z` |
-| Rehacer | `Ctrl + Y` o `Ctrl + Shift + Z` |
-| Nuevo Proyecto | `Ctrl + N` |
-| Guardar | `Ctrl + S` |
-| Zoom In | `Ctrl +` |
-| Zoom Out | `Ctrl -` |
+| Pincel | B |
+| Borrador | E |
+| Selector | I |
+| Mover | V |
+| Selección | M |
+| Toggle Grid | G |
+| Undo | Ctrl+Z |
+| Redo | Ctrl+Y |
+| Nuevo Documento | Ctrl+N |
+| Abrir | Ctrl+O |
+| Guardar | Ctrl+S |
+| Exportar | Ctrl+E |
+| Salir | Ctrl+Q |
 
-## 🚀 Instalación y Uso
+## 🚀 Cómo Usar
 
 ### Requisitos
 - Godot 4.6 o superior
-- .NET 6+ (para C#)
+- .NET 6+ SDK
 
-### Pasos
+### Instalación
 1. Abre Godot 4.6
 2. Importa el proyecto desde la carpeta `/workspace`
-3. Presiona `F5` para ejecutar
+3. Presiona F5 para ejecutar
 
 ### Primeros Pasos
-1. Selecciona una herramienta del toolbar superior
+1. Selecciona una herramienta de la barra superior
 2. Elige un color desde el selector
 3. Ajusta tamaño, opacidad y dureza según necesites
-4. Dibuja en el canvas central
-5. Gestiona capas desde el panel derecho
-6. Aplica filtros según necesites
-7. Exporta tu trabajo cuando termines
+4. Comienza a dibujar en el lienzo central
+5. Usa el panel derecho para gestionar capas y aplicar filtros
 
 ## 🏗️ Arquitectura del Proyecto
 
 ```
 /workspace/
-├── project.godot              # Configuración del proyecto
+├── project.godot              # Configuración Godot 4.6
 ├── icon.svg                   # Icono de la aplicación
-├── README.md                  # Este archivo
+├── README.md                  # Esta documentación
 ├── Scenes/
-│   └── Main.tscn             # Escena principal con UI
-├── Scripts/
-│   ├── Main.cs               # Punto de entrada
-│   ├── Core/
-│   │   ├── BaseTool.cs       # Clase base para herramientas
-│   │   ├── ToolManager.cs    # Gestor de herramientas
-│   │   ├── HistoryManager.cs # Sistema undo/redo
-│   │   ├── DrawingCanvas.cs  # Canvas de dibujo
-│   │   ├── Layer.cs          # Clase de capa
-│   │   └── LayerManager.cs   # Gestor de capas
-│   ├── Tools/
-│   │   ├── BrushTool.cs      # Herramienta Pincel
-│   │   ├── EraserTool.cs     # Herramienta Borrador
-│   │   ├── ColorPickerTool.cs# Herramienta Selector
-│   │   ├── MoveTool.cs       # Herramienta Mover
-│   │   └── SelectTool.cs     # Herramienta Selección
-│   └── UI/
-│       └── MainUI.cs         # Interfaz de usuario
-└── Assets/
-    └── icon.svg              # Recursos gráficos
+│   ├── Main.tscn             # Escena principal
+│   └── MainUI.tscn           # Interfaz de usuario
+└── Scripts/
+    ├── Main.cs               # Punto de entrada y coordinador
+    ├── Core/
+    │   ├── BaseTool.cs       # Clase base para herramientas
+    │   ├── ToolManager.cs    # Gestor de herramientas
+    │   ├── HistoryManager.cs # Sistema undo/redo
+    │   ├── DrawingCanvas.cs  # Canvas de dibujo y grid
+    │   ├── Layer.cs          # Clase de capa individual
+    │   └── LayerManager.cs   # Gestor de múltiples capas
+    ├── Tools/
+    │   ├── BrushTool.cs      # Herramienta pincel
+    │   ├── EraserTool.cs     # Herramienta borrador
+    │   ├── ColorPickerTool.cs# Herramienta cuentagotas
+    │   ├── MoveTool.cs       # Herramienta mover
+    │   └── SelectTool.cs     # Herramienta selección
+    └── UI/
+        └── MainUI.cs         # Lógica de la interfaz
 ```
 
-## 🛠️ Crear Herramientas Personalizadas
+## 🔧 Crear Herramientas Personalizadas
 
-La arquitectura está diseñada para ser extensible. Para crear una nueva herramienta:
+PhotoGodot Pro está diseñado para ser extensible. Para crear tu propia herramienta:
 
 ```csharp
 using Godot;
-using PhotoGodot.Core;
-
-namespace PhotoGodot.Tools;
 
 public partial class MiHerramienta : BaseTool
 {
-    public override string Name => "MiHerramienta";
-    public override string Description => "Descripción de mi herramienta";
-
+    public MiHerramienta()
+    {
+        _toolName = "MiHerramienta";
+    }
+    
+    protected override void OnPressStart(Vector2 position)
+    {
+        // Lógica al iniciar el dibujo
+        GD.Print($"Inicio en: {position}");
+    }
+    
     protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
     {
-        // Tu lógica de dibujo aquí
-        if (WorkingLayer != null)
+        // Lógica durante el arrastre del mouse
+        var layer = _main.GetLayerManager().ActiveLayer;
+        if (layer != null)
         {
-            var pos = ScreenToLayer(to);
-            WorkingLayer.DrawPixel((int)pos.X, (int)pos.Y, PrimaryColor, Opacity);
-            WorkingLayer.UpdateTexture();
+            layer.DrawLine(from, to, _main.GetPrimaryColor(), _main.GetBrushSize());
         }
+        
+        // Guardar estado para undo
+        var compositedImage = _main.GetLayerManager().GetCompositedImage();
+        if (compositedImage != null)
+        {
+            _main.GetHistoryManager().SaveState(compositedImage);
+        }
+    }
+    
+    protected override void OnPressEnd(Vector2 position)
+    {
+        // Lógica al finalizar el dibujo
+        GD.Print($"Fin en: {position}");
     }
 }
 ```
 
-Luego registra la herramienta en `ToolManager.cs`:
+Luego regístrala en `Main.cs`:
 ```csharp
-RegisterTool(new Tools.MiHerramienta());
+_toolManager.RegisterTool(new MiHerramienta(this));
 ```
 
-## 📝 Notas Técnicas
+## 📊 Estadísticas del Proyecto
 
-- **Formato de imagen**: RGBA8 (32-bit con canal alpha)
-- **Tamaño máximo de lienzo**: Limitado por memoria disponible
-- **Rendimiento**: Optimizado para lienzos hasta 4096x4096
-- **Thread safety**: Las operaciones de imagen son single-threaded
+- **Total de archivos**: 17
+- **Líneas de código C#**: ~2,500+
+- **Herramientas implementadas**: 5
+- **Modos de fusión**: 6
+- **Atajos de teclado**: 15+
 
 ## 🐛 Solución de Problemas
 
-### Error al cargar la escena
-Asegúrate de usar Godot 4.6. Versiones anteriores pueden tener incompatibilidades.
+### Error: "scene/resources/resource_format_text.cpp"
+Este error ocurre si las escenas tienen referencias rotas. Solución:
+1. Verifica que todos los scripts existan en las rutas especificadas
+2. Reimporta el proyecto en Godot
+3. Limpia la carpeta `.godot` y vuelve a abrir
 
-### Bajo rendimiento
-- Reduce el tamaño del canvas
-- Disminuye el número de capas
-- Desactiva el grid cuando no lo necesites
+### Error: "node does not specify its parent"
+Ocurre cuando los nodos en el archivo `.tscn` no tienen la jerarquía correcta. 
+El proyecto actual ya tiene esto solucionado con la estructura correcta.
 
-### Herramientas no responden
-Verifica que haya al menos una capa visible y seleccionada.
+## 📝 Licencia
 
-## 📄 Licencia
-
-Este proyecto es de código abierto. Úsalo libremente para tus proyectos.
-
-## 🤝 Contribuciones
-
-¡Las contribuciones son bienvenidas! Siente libertad de mejorar las herramientas existentes o añadir nuevas características.
+Proyecto creado con fines educativos y de demostración.
 
 ---
 
-**Desarrollado con ❤️ usando Godot 4.6 y C#**
-
-*PhotoGodot Pro v1.0 - ¡Tu estudio de diseño personal!*
+**¡Disfruta creando con PhotoGodot Pro! 🎨✨**

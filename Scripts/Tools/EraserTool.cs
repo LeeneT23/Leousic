@@ -1,104 +1,102 @@
 using Godot;
 
-namespace PhotoGodot.Tools;
-
-public partial class EraserTool : Core.BaseTool
+public partial class EraserTool : BaseTool
 {
-    public override string Name => "Eraser";
-    public override string Description => "Erase pixels from the current layer";
-
-    private bool _hasStartedDrawing = false;
-
-    protected override void OnActivate()
+    public EraserTool()
     {
-        _hasStartedDrawing = false;
+        _toolName = "Eraser";
     }
-
-    protected override void OnLeftMouseDown(Vector2 position)
+    
+    protected override void OnPressStart(Vector2 position)
     {
-        _hasStartedDrawing = false;
         EraseAtPosition(position);
-        _hasStartedDrawing = true;
-        SaveState("Eraser Stroke", "Erased pixels");
     }
-
+    
     protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
     {
-        if (!_hasStartedDrawing)
+        float distance = to.DistanceTo(from);
+        int steps = Mathf.CeilToInt(distance / 2.0f);
+        
+        for (int i = 0; i <= steps; i++)
         {
-            EraseAtPosition(to);
-            _hasStartedDrawing = true;
-            return;
+            float t = (float)i / steps;
+            Vector2 interpolatedPos = from.Lerp(to, t);
+            EraseAtPosition(interpolatedPos);
         }
         
-        DrawLine(from, to);
+        SaveHistoryState();
     }
-
-    protected override void OnLeftMouseUp(Vector2 position)
+    
+    protected override void OnPressEnd(Vector2 position)
     {
-        _hasStartedDrawing = false;
+        SaveHistoryState();
     }
-
+    
     private void EraseAtPosition(Vector2 position)
     {
-        if (WorkingLayer == null) return;
+        if (_main.GetLayerManager().ActiveLayer == null) return;
         
-        var layerPos = ScreenToLayer(position);
-        int x = (int)layerPos.X;
-        int y = (int)layerPos.Y;
-        float radius = BrushSize / 2;
+        float brushSize = _main.GetBrushSize();
+        float opacity = _main.GetOpacity();
+        float hardness = _main.GetHardness();
         
-        for (int dy = -(int)Mathf.Ceil(radius); dy <= (int)Mathf.Ceil(radius); dy++)
+        var layer = _main.GetLayerManager().ActiveLayer;
+        EraseCircle(layer, position, brushSize, opacity, hardness);
+    }
+    
+    private void EraseCircle(Layer layer, Vector2 center, float size, float opacity, float hardness)
+    {
+        int radius = (int)(size / 2);
+        int cx = (int)center.X;
+        int cy = (int)center.Y;
+        
+        for (int y = -radius; y <= radius; y++)
         {
-            for (int dx = -(int)Mathf.Ceil(radius); dx <= (int)Mathf.Ceil(radius); dx++)
+            for (int x = -radius; x <= radius; x++)
             {
-                int px = x + dx;
-                int py = y + dy;
-                float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                
-                if (dist <= radius)
+                float distance = Mathf.Sqrt(x * x + y * y);
+                if (distance <= radius)
                 {
-                    float alpha = Opacity;
+                    int px = cx + x;
+                    int py = cy + y;
                     
-                    // Soft eraser falloff
-                    if (Hardness < 1.0f && dist > radius * Hardness)
+                    if (px >= 0 && px < layer.Width && py >= 0 && py < layer.Height)
                     {
-                        float t = (dist - radius * Hardness) / (radius * (1 - Hardness));
-                        alpha *= 1 - t;
+                        float eraseAmount;
+                        
+                        if (distance <= radius * hardness)
+                        {
+                            eraseAmount = opacity;
+                        }
+                        else
+                        {
+                            float fadeRange = radius * (1.0f - hardness);
+                            if (fadeRange > 0)
+                            {
+                                eraseAmount = opacity * (1.0f - (distance - radius * hardness) / fadeRange);
+                            }
+                            else
+                            {
+                                eraseAmount = 0;
+                            }
+                        }
+                        
+                        Color pixelColor = layer.GetImage().GetPixel(px, py);
+                        float newAlpha = Mathf.Max(0, pixelColor.A - eraseAmount);
+                        Color erasedColor = new(pixelColor.R, pixelColor.G, pixelColor.B, newAlpha);
+                        layer.GetImage().SetPixel(px, py, erasedColor);
                     }
-                    
-                    var current = WorkingLayer.Image.GetPixel(px, py);
-                    float newAlpha = Mathf.Max(0, current.A - alpha);
-                    WorkingLayer.Image.SetPixel(px, py, new Color(current.R, current.G, current.B, newAlpha));
                 }
             }
         }
-        
-        WorkingLayer.UpdateTexture();
     }
-
-    private void DrawLine(Vector2 from, Vector2 to)
+    
+    private void SaveHistoryState()
     {
-        int x0 = (int)from.X;
-        int y0 = (int)from.Y;
-        int x1 = (int)to.X;
-        int y1 = (int)to.Y;
-        
-        int dx = Math.Abs(x1 - x0);
-        int dy = Math.Abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;
-        int sy = y0 < y1 ? 1 : -1;
-        int err = (dx > dy ? dx : -dy) / 2;
-        
-        while (true)
+        var compositedImage = _main.GetLayerManager().GetCompositedImage();
+        if (compositedImage != null)
         {
-            EraseAtPosition(new Vector2(x0, y0));
-            
-            if (x0 == x1 && y0 == y1) break;
-            
-            int e2 = err;
-            if (e2 > -dx) { err -= dy; x0 += sx; }
-            if (e2 < dy) { err += dx; y0 += sy; }
+            _main.GetHistoryManager().SaveState(compositedImage);
         }
     }
 }

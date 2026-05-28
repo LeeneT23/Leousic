@@ -1,339 +1,167 @@
 using Godot;
-using System;
-
-namespace PhotoGodot.Core;
 
 public partial class Layer : RefCounted
 {
-    public string Name { get; set; } = "Layer";
-    public Image Image { get; private set; }
-    public bool Visible { get; set; } = true;
-    public float Opacity { get; set; } = 1.0f;
-    public Texture2D Texture { get; private set; }
-    public CanvasBlendMode BlendMode { get; set; } = CanvasBlendMode.Mix;
+    private Image _image;
+    private string _name;
+    private bool _visible = true;
+    private float _opacity = 1.0f;
+    private int _width;
+    private int _height;
     
-    public int Width => Image?.GetWidth() ?? 0;
-    public int Height => Image?.GetHeight() ?? 0;
-
-    public enum CanvasBlendMode
+    public enum BlendMode
     {
-        Mix,
-        Add,
-        Subtract,
+        Normal,
         Multiply,
         Screen,
-        Overlay
+        Overlay,
+        Darken,
+        Lighten
     }
-
+    
+    private BlendMode _blendMode = BlendMode.Normal;
+    
     public Layer(int width, int height, string name = "Layer")
     {
-        Name = name;
-        Image = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
-        Image.Fill(Colors.Transparent);
-        UpdateTexture();
+        _width = width;
+        _height = height;
+        _name = name;
+        _image = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+        _image.Fill(Colors.Transparent);
     }
-
-    public Layer(Image image, string name = "Layer")
-    {
-        Name = name;
-        Image = image;
-        UpdateTexture();
+    
+    public Image GetImage() => _image;
+    public string Name 
+    { 
+        get => _name; 
+        set => _name = value; 
     }
-
-    public void UpdateTexture()
-    {
-        if (Image != null)
-        {
-            var imgCopy = Image.Duplicate();
-            
-            if (Opacity < 1.0f)
-            {
-                for (int y = 0; y < imgCopy.GetHeight(); y++)
-                {
-                    for (int x = 0; x < imgCopy.GetWidth(); x++)
-                    {
-                        var pixel = imgCopy.GetPixel(x, y);
-                        pixel.A *= Opacity;
-                        imgCopy.SetPixel(x, y, pixel);
-                    }
-                }
-            }
-            
-            Texture = ImageTexture.CreateFromImage(imgCopy);
-        }
+    
+    public bool Visible 
+    { 
+        get => _visible; 
+        set => _visible = value; 
     }
-
-    public void DrawPixel(int x, int y, Color color, float alpha = 1.0f)
-    {
-        if (x < 0 || x >= Width || y < 0 || y >= Height) return;
-        
-        var current = Image.GetPixel(x, y);
-        var blended = BlendColors(current, color * alpha, alpha);
-        Image.SetPixel(x, y, blended);
+    
+    public float Opacity 
+    { 
+        get => _opacity; 
+        set => _opacity = Mathf.Clamp(value, 0.0f, 1.0f); 
     }
-
-    public void DrawLine(Vector2 from, Vector2 to, Color color, float width, float alpha = 1.0f)
-    {
-        Image.DrawLine(from, to, color * new Color(1, 1, 1, alpha), (int)Mathf.Ceil(width));
+    
+    public BlendMode Mode 
+    { 
+        get => _blendMode; 
+        set => _blendMode = value; 
     }
-
-    public void DrawCircle(Vector2 center, float radius, Color color, bool filled = true, float alpha = 1.0f)
-    {
-        if (filled)
-        {
-            Image.FillCircle(center, (int)radius, color * new Color(1, 1, 1, alpha));
-        }
-        else
-        {
-            // Draw circle outline
-            for (float angle = 0; angle < Mathf.Tau; angle += 0.05f)
-            {
-                var point = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
-                Image.SetPixel((int)point.X, (int)point.Y, color * new Color(1, 1, 1, alpha));
-            }
-        }
-    }
-
-    public void FillRect(Rect2 rect, Color color, float alpha = 1.0f)
-    {
-        for (int y = (int)rect.Position.Y; y < rect.End.Y && y < Height; y++)
-        {
-            for (int x = (int)rect.Position.X; x < rect.End.X && x < Width; x++)
-            {
-                if (x >= 0 && y >= 0)
-                {
-                    DrawPixel(x, y, color, alpha);
-                }
-            }
-        }
-    }
-
+    
+    public int Width => _width;
+    public int Height => _height;
+    
     public void Clear()
     {
-        Image.Fill(Colors.Transparent);
-        UpdateTexture();
+        _image.Fill(Colors.Transparent);
     }
-
-    public void ApplyFilter(Func<Color, Color> filterFunc)
+    
+    public void DrawPixel(int x, int y, Color color)
     {
-        for (int y = 0; y < Height; y++)
+        if (x >= 0 && x < _width && y >= 0 && y < _height)
         {
-            for (int x = 0; x < Width; x++)
-            {
-                var pixel = Image.GetPixel(x, y);
-                Image.SetPixel(x, y, filterFunc(pixel));
-            }
+            Color existingColor = _image.GetPixel(x, y);
+            Color blendedColor = ApplyBlendMode(existingColor, color, _blendMode);
+            blendedColor.A *= _opacity;
+            _image.SetPixel(x, y, blendedColor);
         }
-        UpdateTexture();
     }
-
-    public void ApplyBlur(int radius = 2)
+    
+    public void DrawLine(Vector2 from, Vector2 to, Color color, float width)
     {
-        var blurred = Image.Duplicate();
-        for (int y = 0; y < Height; y++)
-        {
-            for (int x = 0; x < Width; x++)
-            {
-                Color sum = Colors.Transparent;
-                int count = 0;
-                
-                for (int dy = -radius; dy <= radius; dy++)
-                {
-                    for (int dx = -radius; dx <= radius; dx++)
-                    {
-                        int nx = x + dx;
-                        int ny = y + dy;
-                        
-                        if (nx >= 0 && nx < Width && ny >= 0 && ny < Height)
-                        {
-                            sum += Image.GetPixel(nx, ny);
-                            count++;
-                        }
-                    }
-                }
-                
-                if (count > 0)
-                {
-                    blurred.SetPixel(x, y, sum / count);
-                }
-            }
-        }
-        Image = blurred;
-        UpdateTexture();
-    }
-
-    public void ApplySharpen()
-    {
-        var sharpened = Image.Duplicate();
-        float[,] kernel = {
-            { 0, -1, 0 },
-            { -1, 5, -1 },
-            { 0, -1, 0 }
-        };
+        // Bresenham's line algorithm for pixel-perfect lines
+        int x0 = (int)from.X, y0 = (int)from.Y;
+        int x1 = (int)to.X, y1 = (int)to.Y;
         
-        for (int y = 1; y < Height - 1; y++)
-        {
-            for (int x = 1; x < Width - 1; x++)
-            {
-                Color sum = Colors.Black;
-                
-                for (int ky = -1; ky <= 1; ky++)
-                {
-                    for (int kx = -1; kx <= 1; kx++)
-                    {
-                        var pixel = Image.GetPixel(x + kx, y + ky);
-                        sum += pixel * kernel[ky + 1, kx + 1];
-                    }
-                }
-                
-                sharpened.SetPixel(x, y, sum);
-            }
-        }
-        Image = sharpened;
-        UpdateTexture();
-    }
-
-    public void Grayscale()
-    {
-        ApplyFilter(c =>
-        {
-            float gray = c.R * 0.299f + c.G * 0.587f + c.B * 0.114f;
-            return new Color(gray, gray, gray, c.A);
-        });
-    }
-
-    public void Invert()
-    {
-        ApplyFilter(c => new Color(1 - c.R, 1 - c.G, 1 - c.B, c.A));
-    }
-
-    public void AdjustBrightness(float amount)
-    {
-        ApplyFilter(c =>
-        {
-            return new Color(
-                Mathf.Clamp(c.R + amount, 0, 1),
-                Mathf.Clamp(c.G + amount, 0, 1),
-                Mathf.Clamp(c.B + amount, 0, 1),
-                c.A
-            );
-        });
-    }
-
-    public void AdjustContrast(float amount)
-    {
-        float factor = (1 + amount) / (1 - amount);
-        ApplyFilter(c =>
-        {
-            return new Color(
-                Mathf.Clamp(factor * (c.R - 0.5f) + 0.5f, 0, 1),
-                Mathf.Clamp(factor * (c.G - 0.5f) + 0.5f, 0, 1),
-                Mathf.Clamp(factor * (c.B - 0.5f) + 0.5f, 0, 1),
-                c.A
-            );
-        });
-    }
-
-    public Image GetCompositedImage(Layer[] layersBelow)
-    {
-        var result = Image.Duplicate();
+        int dx = Math.Abs(x1 - x0);
+        int dy = Math.Abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx - dy;
         
-        foreach (var layer in layersBelow)
+        while (true)
         {
-            if (!layer.Visible) continue;
+            DrawCircle(new Vector2(x0, y0), width / 2, color);
             
-            for (int y = 0; y < Height; y++)
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 < dx) { err += dx; y0 += sy; }
+        }
+    }
+    
+    public void DrawCircle(Vector2 center, float radius, Color color)
+    {
+        int cx = (int)center.X;
+        int cy = (int)center.Y;
+        int r = (int)radius;
+        
+        for (int y = -r; y <= r; y++)
+        {
+            for (int x = -r; x <= r; x++)
             {
-                for (int x = 0; x < Width; x++)
+                if (x * x + y * y <= r * r)
                 {
-                    var below = layer.Image.GetPixel(x, y);
-                    var above = result.GetPixel(x, y);
-                    result.SetPixel(x, y, CompositePixels(below, above, layer.BlendMode));
+                    int px = cx + x;
+                    int py = cy + y;
+                    if (px >= 0 && px < _width && py >= 0 && py < _height)
+                    {
+                        Color existingColor = _image.GetPixel(px, py);
+                        float alpha = color.A * _opacity;
+                        Color newColor = new(
+                            color.R * alpha + existingColor.R * (1 - alpha),
+                            color.G * alpha + existingColor.G * (1 - alpha),
+                            color.B * alpha + existingColor.B * (1 - alpha),
+                            Mathf.Min(1.0f, alpha + existingColor.A)
+                        );
+                        _image.SetPixel(px, py, newColor);
+                    }
                 }
             }
         }
-        
-        return result;
     }
-
-    private Color BlendColors(Color bg, Color fg, float alpha)
+    
+    private Color ApplyBlendMode(Color baseColor, Color blendColor, BlendMode mode)
     {
-        return new Color(
-            bg.R * (1 - alpha) + fg.R * alpha,
-            bg.G * (1 - alpha) + fg.G * alpha,
-            bg.B * (1 - alpha) + fg.B * alpha,
-            Mathf.Max(bg.A, fg.A * alpha)
-        );
-    }
-
-    private Color CompositePixels(Color below, Color above, CanvasBlendMode mode)
-    {
-        float a = above.A;
-        float b = below.A;
-        float outA = a + b * (1 - a);
-        
-        if (outA == 0) return Colors.Transparent;
-        
-        Color outRGB;
-        
-        switch (mode)
+        return mode switch
         {
-            case CanvasBlendMode.Add:
-                outRGB = new Color(
-                    Mathf.Min(above.R * a + below.R * b, 1),
-                    Mathf.Min(above.G * a + below.G * b, 1),
-                    Mathf.Min(above.B * a + below.B * b, 1)
-                );
-                break;
-            case CanvasBlendMode.Subtract:
-                outRGB = new Color(
-                    Mathf.Max(above.R * a - below.R * b, 0),
-                    Mathf.Max(above.G * a - below.G * b, 0),
-                    Mathf.Max(above.B * a - below.B * b, 0)
-                );
-                break;
-            case CanvasBlendMode.Multiply:
-                outRGB = new Color(
-                    above.R * below.R + below.R * (1 - a) + above.R * (1 - b),
-                    above.G * below.G + below.G * (1 - a) + above.G * (1 - b),
-                    above.B * below.B + below.B * (1 - a) + above.B * (1 - b)
-                );
-                break;
-            case CanvasBlendMode.Screen:
-                outRGB = new Color(
-                    1 - (1 - above.R) * (1 - below.R),
-                    1 - (1 - above.G) * (1 - below.G),
-                    1 - (1 - above.B) * (1 - below.B)
-                );
-                break;
-            case CanvasBlendMode.Overlay:
-                outRGB = new Color(
-                    below.R < 0.5 ? 2 * above.R * below.R : 1 - 2 * (1 - above.R) * (1 - below.R),
-                    below.G < 0.5 ? 2 * above.G * below.G : 1 - 2 * (1 - above.G) * (1 - below.G),
-                    below.B < 0.5 ? 2 * above.B * below.B : 1 - 2 * (1 - above.B) * (1 - below.B)
-                );
-                break;
-            default: // Mix
-                outRGB = new Color(
-                    (above.R * a + below.R * b * (1 - a)) / outA,
-                    (above.G * a + below.G * b * (1 - a)) / outA,
-                    (above.B * a + below.B * b * (1 - a)) / outA
-                );
-                break;
-        }
-        
-        return new Color(outRGB.R, outRGB.G, outRGB.B, outA);
+            BlendMode.Multiply => new(
+                baseColor.R * blendColor.R,
+                baseColor.G * blendColor.G,
+                baseColor.B * blendColor.B,
+                Mathf.Max(baseColor.A, blendColor.A)
+            ),
+            BlendMode.Screen => new(
+                1 - (1 - baseColor.R) * (1 - blendColor.R),
+                1 - (1 - baseColor.G) * (1 - blendColor.G),
+                1 - (1 - baseColor.B) * (1 - blendColor.B),
+                Mathf.Max(baseColor.A, blendColor.A)
+            ),
+            BlendMode.Darken => new(
+                Math.Min(baseColor.R, blendColor.R),
+                Math.Min(baseColor.G, blendColor.G),
+                Math.Min(baseColor.B, blendColor.B),
+                Mathf.Max(baseColor.A, blendColor.A)
+            ),
+            BlendMode.Lighten => new(
+                Math.Max(baseColor.R, blendColor.R),
+                Math.Max(baseColor.G, blendColor.G),
+                Math.Max(baseColor.B, blendColor.B),
+                Mathf.Max(baseColor.A, blendColor.A)
+            ),
+            _ => blendColor
+        };
     }
-
-    public byte[] SaveToBytes()
+    
+    public Image Duplicate()
     {
-        return Image.SavePngToBuffer();
-    }
-
-    public static Layer LoadFromBytes(byte[] data, int width, int height, string name = "Layer")
-    {
-        var img = Image.New();
-        img.LoadPngFromBuffer(data);
-        return new Layer(img, name);
+        return _image.Duplicate() as Image;
     }
 }

@@ -1,164 +1,120 @@
 using Godot;
 
-namespace PhotoGodot.Tools;
-
-public partial class SelectTool : Core.BaseTool
+public partial class SelectTool : BaseTool
 {
-    public override string Name => "Select";
-    public override string Description => "Make rectangular selections";
-
-    public bool HasSelection { get; private set; }
-    public Rect2 SelectionRect { get; private set; }
-    
+    private Vector2 _selectionStart;
+    private Rect2 _selectionRect;
     private bool _isSelecting = false;
-    private Vector2 _startPos;
-
-    protected override void OnLeftMouseDown(Vector2 position)
+    
+    public Rect2 SelectionRect => _selectionRect;
+    public bool HasSelection => _selectionRect.Size.X > 0 && _selectionRect.Size.Y > 0;
+    
+    public SelectTool()
     {
-        _isSelecting = true;
-        _startPos = position;
-        
-        var layerPos = ScreenToLayer(position);
-        SelectionRect = new Rect2(layerPos.X, layerPos.Y, 0, 0);
+        _toolName = "Select";
     }
-
+    
+    protected override void OnPressStart(Vector2 position)
+    {
+        _selectionStart = position;
+        _selectionRect = new Rect2(position, Vector2.Zero);
+        _isSelecting = true;
+        
+        GD.Print($"Selection started at: {position}");
+    }
+    
     protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
     {
         if (!_isSelecting) return;
         
-        var fromLayer = ScreenToLayer(from);
-        var toLayer = ScreenToLayer(to);
+        // Update selection rectangle
+        Vector2 size = to - _selectionStart;
+        _selectionRect = new Rect2(
+            _selectionStart.X < to.X ? _selectionStart.X : to.X,
+            _selectionStart.Y < to.Y ? _selectionStart.Y : to.Y,
+            Mathf.Abs(size.X),
+            Mathf.Abs(size.Y)
+        );
         
-        float x = Mathf.Min(fromLayer.X, toLayer.X);
-        float y = Mathf.Min(fromLayer.Y, toLayer.Y);
-        float width = Mathf.Abs(toLayer.X - fromLayer.X);
-        float height = Mathf.Abs(toLayer.Y - fromLayer.Y);
-        
-        SelectionRect = new Rect2(x, y, width, height);
-        HasSelection = width > 1 && height > 1;
-        
-        // Request canvas redraw to show selection
-        if (Canvas != null)
-        {
-            Canvas.QueueRedraw();
-        }
+        GD.Print($"Selecting: {_selectionRect}");
     }
-
-    protected override void OnLeftMouseUp(Vector2 position)
+    
+    protected override void OnPressEnd(Vector2 position)
     {
         _isSelecting = false;
         
+        // Ensure minimum selection size
+        if (_selectionRect.Size.X < 1 || _selectionRect.Size.Y < 1)
+        {
+            _selectionRect = new Rect2();
+        }
+        
         if (HasSelection)
         {
-            SaveState("Selection", "Created selection");
-            GD.Print($"[SelectTool] Selection: {SelectionRect}");
+            GD.Print($"Selection complete: {_selectionRect}");
         }
     }
-
+    
     public void ClearSelection()
     {
-        HasSelection = false;
-        SelectionRect = new Rect2(0, 0, 0, 0);
-        Canvas?.QueueRedraw();
+        _selectionRect = new Rect2();
+        GD.Print("Selection cleared");
     }
-
+    
     public void CopySelection()
     {
-        if (!HasSelection || WorkingLayer == null) return;
+        if (!HasSelection) return;
         
-        int x = (int)SelectionRect.Position.X;
-        int y = (int)SelectionRect.Position.Y;
-        int w = (int)SelectionRect.Size.X;
-        int h = (int)SelectionRect.Size.Y;
+        var activeLayer = _main.GetLayerManager().ActiveLayer;
+        if (activeLayer == null) return;
         
-        if (w <= 0 || h <= 0) return;
+        var image = activeLayer.GetImage();
+        int x = (int)_selectionRect.Position.X;
+        int y = (int)_selectionRect.Position.Y;
+        int width = (int)_selectionRect.Size.X;
+        int height = (int)_selectionRect.Size.Y;
         
-        var cropped = WorkingLayer.Image.GetRegion(new Rect2I(x, y, w, h));
-        GD.Print($"[SelectTool] Copied region: {w}x{h}");
+        // Clamp to image bounds
+        x = Mathf.Clamp(x, 0, image.GetWidth());
+        y = Mathf.Clamp(y, 0, image.GetHeight());
+        width = Mathf.Min(width, image.GetWidth() - x);
+        height = Mathf.Min(height, image.GetHeight() - y);
         
-        // Could store for paste operation
-    }
-
-    public void CutSelection()
-    {
-        if (!HasSelection || WorkingLayer == null) return;
-        
-        CopySelection();
-        
-        // Clear the selected area
-        for (int y = (int)SelectionRect.Position.Y; 
-             y < SelectionRect.End.Y && y < WorkingLayer.Height; y++)
+        if (width > 0 && height > 0)
         {
-            for (int x = (int)SelectionRect.Position.X; 
-                 x < SelectionRect.End.X && x < WorkingLayer.Width; x++)
-            {
-                if (x >= 0 && y >= 0)
-                {
-                    WorkingLayer.Image.SetPixel(x, y, Colors.Transparent);
-                }
-            }
+            var croppedImage = image.GetRegion(new Rect2i(x, y, width, height));
+            GD.Print($"Copied selection: {width}x{height}");
+            // Store in clipboard (would need a clipboard manager for full implementation)
         }
-        
-        WorkingLayer.UpdateTexture();
-        ClearSelection();
     }
-
-    public void FillSelection(Color color)
-    {
-        if (!HasSelection || WorkingLayer == null) return;
-        
-        SaveState("Fill Selection", "Filled selection with color");
-        
-        WorkingLayer.FillRect(SelectionRect, color, Opacity);
-        WorkingLayer.UpdateTexture();
-    }
-
+    
     public void DeleteSelection()
     {
-        if (!HasSelection || WorkingLayer == null) return;
+        if (!HasSelection) return;
         
-        SaveState("Delete Selection", "Deleted selected area");
+        var activeLayer = _main.GetLayerManager().ActiveLayer;
+        if (activeLayer == null) return;
         
-        for (int y = (int)SelectionRect.Position.Y; 
-             y < SelectionRect.End.Y && y < WorkingLayer.Height; y++)
+        var image = activeLayer.GetImage();
+        int x = (int)_selectionRect.Position.X;
+        int y = (int)_selectionRect.Position.Y;
+        int width = (int)_selectionRect.Size.X;
+        int height = (int)_selectionRect.Size.Y;
+        
+        for (int py = y; py < y + height && py < image.GetHeight(); py++)
         {
-            for (int x = (int)SelectionRect.Position.X; 
-                 x < SelectionRect.End.X && x < WorkingLayer.Width; x++)
+            for (int px = x; px < x + width && px < image.GetWidth(); px++)
             {
-                if (x >= 0 && y >= 0)
+                if (px >= 0 && py >= 0)
                 {
-                    WorkingLayer.Image.SetPixel(x, y, Colors.Transparent);
+                    Color pixelColor = image.GetPixel(px, py);
+                    Color transparentColor = new(pixelColor.R, pixelColor.G, pixelColor.B, 0);
+                    image.SetPixel(px, py, transparentColor);
                 }
             }
         }
         
-        WorkingLayer.UpdateTexture();
+        GD.Print("Selection deleted");
         ClearSelection();
-    }
-
-    public override void OnKeyDown(Keycode keycode)
-    {
-        switch (keycode)
-        {
-            case Key.Delete:
-            case Key.BackSpace:
-                DeleteSelection();
-                break;
-            case Key.C:
-                if (Input.IsKeyPressed(Key.Ctrl))
-                {
-                    CopySelection();
-                }
-                break;
-            case Key.X:
-                if (Input.IsKeyPressed(Key.Ctrl))
-                {
-                    CutSelection();
-                }
-                break;
-            case Key.Escape:
-                ClearSelection();
-                break;
-        }
     }
 }
