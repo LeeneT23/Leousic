@@ -1,46 +1,25 @@
 using Godot;
 
-public partial class ColorPickerTool : BaseTool
+namespace PhotoGodot.Tools;
+
+public partial class ColorPickerTool : Core.BaseTool
 {
     public ColorPickerTool()
     {
-        _toolName = "ColorPicker";
+        ToolName = "ColorPicker";
     }
-    
-    protected override void OnPressStart(Vector2 position)
+
+    public override void OnInput(InputEvent e)
     {
-        PickColor(position);
-    }
-    
-    protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
-    {
-        // Color picker only picks on click, not while dragging
-    }
-    
-    protected override void OnPressEnd(Vector2 position)
-    {
-        // Do nothing on release
-    }
-    
-    private void PickColor(Vector2 position)
-    {
-        var compositedImage = _main.GetLayerManager().GetCompositedImage();
-        if (compositedImage == null) return;
-        
-        int x = (int)position.X;
-        int y = (int)position.Y;
-        
-        if (x >= 0 && x < compositedImage.GetWidth() && 
-            y >= 0 && y < compositedImage.GetHeight())
+        if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
         {
-            Color pickedColor = compositedImage.GetPixel(x, y);
-            _main.SetPrimaryColor(pickedColor);
+            var canvasPos = MainScene.ScreenToCanvas(mb.GlobalPosition);
             
-            GD.Print($"Color picked: {pickedColor.ToHtml()}");
-            
-            if (_main.GetMainUI() != null)
+            if (LayerManager.ActiveLayer != null)
             {
-                _main.GetMainUI().UpdateColorPicker(pickedColor);
+                Color pickedColor = LayerManager.ActiveLayer.GetPixel(canvasPos);
+                MainScene.CurrentColor = pickedColor;
+                GD.Print($"Color seleccionado: {pickedColor.ToHtml()}");
             }
         }
     }

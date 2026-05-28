@@ -1,55 +1,52 @@
 using Godot;
 using System.Collections.Generic;
 
+namespace PhotoGodot.Core;
+
 public partial class ToolManager : Node
 {
-    private Main _main;
+    public signal ToolChanged(BaseTool tool);
+
     private Dictionary<string, BaseTool> _tools = new();
     private BaseTool _currentTool;
-    
+
     public BaseTool CurrentTool => _currentTool;
-    public string CurrentToolName => _currentTool?.ToolName ?? "None";
-    
-    public void Initialize(Main main)
-    {
-        _main = main;
-    }
-    
+
     public void RegisterTool(BaseTool tool)
     {
-        if (tool == null) return;
-        
-        tool.Initialize(_main);
-        AddChild(tool);
         _tools[tool.ToolName] = tool;
+        tool.Initialize(GetParent<Main>(), GetNode<LayerManager>("../LayerManager"), GetNode<HistoryManager>("../HistoryManager"));
         
-        GD.Print($"Tool registered: {tool.ToolName}");
-    }
-    
-    public void SetActiveTool(string toolName)
-    {
-        if (!_tools.ContainsKey(toolName))
+        if (_currentTool == null)
         {
-            GD.PrintErr($"Tool not found: {toolName}");
-            return;
+            SetTool(tool);
         }
-        
-        _currentTool?.OnDeactivate();
-        _currentTool = _tools[toolName];
+    }
+
+    public void SetTool(string toolName)
+    {
+        if (_tools.ContainsKey(toolName))
+        {
+            SetTool(_tools[toolName]);
+        }
+    }
+
+    public void SetTool(BaseTool tool)
+    {
+        if (_currentTool != null)
+            _currentTool.OnDeactivate();
+
+        _currentTool = tool;
         _currentTool.OnActivate();
-        
-        GD.Print($"Active tool: {toolName}");
-        
-        if (_main.GetMainUI() != null)
-        {
-            _main.GetMainUI().UpdateToolLabel(toolName);
-        }
+        ToolChanged.Emit(tool);
+        GD.Print($"Herramienta activa: {tool.ToolName}");
     }
-    
-    public BaseTool GetTool(string toolName)
+
+    public void HandleInput(InputEvent e)
     {
-        return _tools.TryGetValue(toolName, out var tool) ? tool : null;
+        if (_currentTool != null)
+            _currentTool.OnInput(e);
     }
     
-    public Dictionary<string, BaseTool> GetAllTools() => _tools;
+    public BaseTool GetToolByName(string name) => _tools.ContainsKey(name) ? _tools[name] : null;
 }

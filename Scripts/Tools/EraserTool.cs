@@ -1,102 +1,78 @@
 using Godot;
 
-public partial class EraserTool : BaseTool
+namespace PhotoGodot.Tools;
+
+public partial class EraserTool : Core.BaseTool
 {
     public EraserTool()
     {
-        _toolName = "Eraser";
+        ToolName = "Eraser";
     }
-    
-    protected override void OnPressStart(Vector2 position)
+
+    private float _size = 20f;
+
+    public override void OnActivate()
     {
-        EraseAtPosition(position);
+        if (MainScene != null)
+        {
+            _size = MainScene.BrushSize * 2;
+        }
     }
-    
-    protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
+
+    public override void OnInput(InputEvent e)
     {
-        float distance = to.DistanceTo(from);
-        int steps = Mathf.CeilToInt(distance / 2.0f);
+        if (e is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+        {
+            var canvasPos = MainScene.ScreenToCanvas(mb.GlobalPosition);
+            
+            if (mb.Pressed)
+            {
+                OnBeginDraw(canvasPos);
+                EraseStroke(LastPos, canvasPos, true);
+            }
+            else if (IsDrawing)
+            {
+                OnEndDraw(canvasPos);
+            }
+        }
+        else if (e is InputEventMouseMotion mm && IsDrawing)
+        {
+            var canvasPos = MainScene.ScreenToCanvas(mm.GlobalPosition);
+            EraseStroke(LastPos, canvasPos);
+            LastPos = canvasPos;
+        }
+    }
+
+    private void EraseStroke(Vector2 from, Vector2 to, bool isPoint = false)
+    {
+        if (LayerManager.ActiveLayer == null) return;
+
+        float dist = from.DistanceTo(to);
+        int steps = isPoint ? 1 : (int)(dist / (_size * 0.3f));
         
         for (int i = 0; i <= steps; i++)
         {
-            float t = (float)i / steps;
-            Vector2 interpolatedPos = from.Lerp(to, t);
-            EraseAtPosition(interpolatedPos);
-        }
-        
-        SaveHistoryState();
-    }
-    
-    protected override void OnPressEnd(Vector2 position)
-    {
-        SaveHistoryState();
-    }
-    
-    private void EraseAtPosition(Vector2 position)
-    {
-        if (_main.GetLayerManager().ActiveLayer == null) return;
-        
-        float brushSize = _main.GetBrushSize();
-        float opacity = _main.GetOpacity();
-        float hardness = _main.GetHardness();
-        
-        var layer = _main.GetLayerManager().ActiveLayer;
-        EraseCircle(layer, position, brushSize, opacity, hardness);
-    }
-    
-    private void EraseCircle(Layer layer, Vector2 center, float size, float opacity, float hardness)
-    {
-        int radius = (int)(size / 2);
-        int cx = (int)center.X;
-        int cy = (int)center.Y;
-        
-        for (int y = -radius; y <= radius; y++)
-        {
-            for (int x = -radius; x <= radius; x++)
+            float t = steps == 0 ? 0 : (float)i / steps;
+            Vector2 pos = from + (to - from) * t;
+            
+            int radius = (int)(_size / 2);
+            for (int y = -radius; y <= radius; y++)
             {
-                float distance = Mathf.Sqrt(x * x + y * y);
-                if (distance <= radius)
+                for (int x = -radius; x <= radius; x++)
                 {
-                    int px = cx + x;
-                    int py = cy + y;
+                    float dx = x;
+                    float dy = y;
+                    float distFromCenter = Mathf.Sqrt(dx * dx + dy * dy);
                     
-                    if (px >= 0 && px < layer.Width && py >= 0 && py < layer.Height)
+                    if (distFromCenter <= radius)
                     {
-                        float eraseAmount;
-                        
-                        if (distance <= radius * hardness)
-                        {
-                            eraseAmount = opacity;
-                        }
-                        else
-                        {
-                            float fadeRange = radius * (1.0f - hardness);
-                            if (fadeRange > 0)
-                            {
-                                eraseAmount = opacity * (1.0f - (distance - radius * hardness) / fadeRange);
-                            }
-                            else
-                            {
-                                eraseAmount = 0;
-                            }
-                        }
-                        
-                        Color pixelColor = layer.GetImage().GetPixel(px, py);
-                        float newAlpha = Mathf.Max(0, pixelColor.A - eraseAmount);
-                        Color erasedColor = new(pixelColor.R, pixelColor.G, pixelColor.B, newAlpha);
-                        layer.GetImage().SetPixel(px, py, erasedColor);
+                        // Borrar = pintar con transparencia
+                        LayerManager.ActiveLayer.DrawPixel(pos + new Vector2(x, y), Colors.Transparent);
                     }
                 }
             }
         }
-    }
-    
-    private void SaveHistoryState()
-    {
-        var compositedImage = _main.GetLayerManager().GetCompositedImage();
-        if (compositedImage != null)
-        {
-            _main.GetHistoryManager().SaveState(compositedImage);
-        }
+        
+        CommitChanges();
     }
 }
