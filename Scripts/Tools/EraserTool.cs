@@ -1,16 +1,21 @@
 using Godot;
-using PhotoGodot.Core;
 
 namespace PhotoGodot.Tools;
 
 public partial class EraserTool : BaseTool
 {
-    [Export] public float EraserSize { get; set; } = 15.0f;
-    [Export] public float Hardness { get; set; } = 0.5f;
+    [Export] public float BrushSize { get; set; } = 15.0f;
+    [Export] public float Opacity { get; set; } = 1.0f;
+
+    public EraserTool()
+    {
+        ToolName = "Borrador";
+        ShortcutKey = "e";
+    }
 
     public override void OnActivate()
     {
-        GD.Print("🧼 Borrador activado");
+        MainScene.SetCursor("cross");
     }
 
     public override void OnInput(InputEvent e)
@@ -41,25 +46,17 @@ public partial class EraserTool : BaseTool
     {
         if (LayerManager.ActiveLayer == null) return;
         
-        int radius = (int)(EraserSize / 2);
+        int radius = (int)(BrushSize / 2);
         for (int y = -radius; y <= radius; y++)
         {
             for (int x = -radius; x <= radius; x++)
             {
-                Vector2 offset = new(x, y);
+                Vector2 offset = new Vector2(x, y);
                 if (offset.Length() <= radius)
                 {
-                    float alpha = 1.0f;
-                    if (Hardness < 1.0f)
-                    {
-                        float dist = offset.Length() / radius;
-                        alpha = Math.Max(0, 1.0f - dist * (1.0f - Hardness));
-                    }
-                    
-                    var currentPos = pos + offset;
-                    var current = LayerManager.ActiveLayer.ImageData.GetPixel((int)currentPos.X, (int)currentPos.Y);
-                    current.A *= (1.0f - alpha);
-                    LayerManager.ActiveLayer.ImageData.SetPixel((int)currentPos.X, (int)currentPos.Y, current);
+                    float distFactor = 1.0f - (offset.Length() / radius);
+                    float alpha = distFactor * Opacity;
+                    LayerManager.ActiveLayer.ErasePixel(pos + offset, alpha);
                 }
             }
         }
@@ -69,7 +66,7 @@ public partial class EraserTool : BaseTool
     private void EraseLine(Vector2 from, Vector2 to)
     {
         float dist = from.DistanceTo(to);
-        int steps = (int)Math.Ceil(dist * 2);
+        int steps = (int)(dist * 2);
         
         for (int i = 0; i <= steps; i++)
         {

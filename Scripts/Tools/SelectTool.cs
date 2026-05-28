@@ -1,17 +1,28 @@
 using Godot;
-using PhotoGodot.Core;
 
 namespace PhotoGodot.Tools;
 
 public partial class SelectTool : BaseTool
 {
-    private bool _isSelecting = false;
     private Vector2 _startPos;
     private Rect2 _selection;
 
+    public SelectTool()
+    {
+        ToolName = "Seleccionar";
+        ShortcutKey = "m";
+    }
+
     public override void OnActivate()
     {
-        GD.Print("⬜ Selección activada");
+        MainScene.SetCursor("cross");
+        MainScene.ShowSelection(true);
+    }
+
+    public override void OnDeactivate()
+    {
+        MainScene.ShowSelection(false);
+        _selection = new Rect2();
     }
 
     public override void OnInput(InputEvent e)
@@ -22,20 +33,20 @@ public partial class SelectTool : BaseTool
             
             if (mb.ButtonIndex == MouseButton.Left && mb.Pressed)
             {
-                _isSelecting = true;
                 _startPos = pos;
-                _selection = new Rect2(pos, Vector2.Zero);
+                IsDrawing = true;
             }
             else if (mb.ButtonIndex == MouseButton.Left && !mb.Pressed)
             {
-                _isSelecting = false;
-                GD.Print($"Selección: {_selection.Size}");
+                IsDrawing = false;
+                MainScene.UpdateSelection(_selection);
             }
         }
-        else if (e is InputEventMouseMotion mm && _isSelecting)
+        else if (e is InputEventMouseMotion mm && IsDrawing)
         {
             Vector2 currentPos = MainScene.GetCanvasPosition(mm.Position);
             _selection = new Rect2(_startPos, currentPos - _startPos);
+            MainScene.UpdateSelection(_selection);
         }
     }
 }

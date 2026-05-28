@@ -1,376 +1,285 @@
 using Godot;
 using PhotoGodot.Core;
-using System;
 
 namespace PhotoGodot.UI;
 
 public partial class MainUI : CanvasLayer
 {
     private Main _main;
+    private LayerManager _layerManager;
+    private ToolManager _toolManager;
+    private HistoryManager _historyManager;
     
-    // Toolbar
-    private VBoxContainer _toolbar;
-    private Button _brushBtn, _eraserBtn, _pickerBtn, _moveBtn, _selectBtn;
-    
-    // Color Pickers
-    private ColorPickerButton _primaryColorPicker;
-    private ColorPickerButton _secondaryColorPicker;
-    
-    // Brush Settings
-    private VBoxContainer _brushSettings;
-    private HSlider _sizeSlider;
-    private HSlider _hardnessSlider;
-    private HSlider _opacitySlider;
-    
-    // Layers Panel
-    private VBoxContainer _layersPanel;
-    private ItemList _layerList;
-    private Button _newLayerBtn, _deleteLayerBtn, _duplicateLayerBtn, _mergeDownBtn, _flattenBtn;
-    
-    // Status Bar
-    private Label _statusLabel;
+    // Contenedores UI
+    private Control _toolbar;
+    private Control _layersPanel;
+    private Control _propertiesPanel;
+    private ColorPickerButton _colorPicker;
     private Label _zoomLabel;
-    private Label _cursorLabel;
-    
-    // Menu Bar
-    private MenuBar _menuBar;
-    
-    // Notification
-    private Panel _notificationPanel;
-    private Label _notificationLabel;
-    private Timer _notificationTimer;
+    private VBoxCompat _layersList;
+    private Button _newLayerBtn;
+    private Button _deleteLayerBtn;
+    private Button _mergeDownBtn;
+    private Button _flattenBtn;
 
     public override void _Ready()
     {
-        CreateUI();
+        Layer = 10; // UI por encima de todo
     }
 
-    public void Initialize(Main main)
+    public void Setup(Main main, LayerManager lm, ToolManager tm, HistoryManager hm)
     {
         _main = main;
+        _layerManager = lm;
+        _toolManager = tm;
+        _historyManager = hm;
         
-        // Conectar señales
-        _main.LayerManager.LayerListChanged += UpdateLayerList;
-        _main.LayerManager.ActiveLayerChanged += UpdateActiveLayer;
-        _main.ToolManager.ToolChanged += OnToolChanged;
+        BuildUI();
+        ConnectSignals();
     }
 
-    private void CreateUI()
+    private void BuildUI()
     {
-        // Menu Bar superior
-        CreateMenuBar();
-        
-        // Toolbar izquierda
+        // Toolbar superior
         CreateToolbar();
         
-        // Panel derecho (capas y propiedades)
-        CreateRightPanel();
+        // Panel de propiedades (izquierda)
+        CreatePropertiesPanel();
         
-        // Barra de estado inferior
+        // Panel de capas (derecha)
+        CreateLayersPanel();
+        
+        // Barra de estado (inferior)
         CreateStatusBar();
-        
-        // Notificación
-        CreateNotification();
-    }
-
-    private void CreateMenuBar()
-    {
-        var menuContainer = new HBoxContainer();
-        menuContainer.SetAnchorsPreset(Control.LayoutPreset.TopWide);
-        menuContainer.Position = new Vector2(0, 0);
-        menuContainer.Size = new Vector2(1280, 30);
-        AddChild(menuContainer);
-
-        // Botones de menú
-        var fileMenu = CreateMenuButton("Archivo", new[] { "Nuevo (Ctrl+N)", "Exportar (Ctrl+S)" });
-        fileMenu.IdPressed += id => {
-            if (id == 0) _main.NewFile();
-            if (id == 1) _main.ExportImage();
-        };
-        menuContainer.AddChild(fileMenu);
-
-        var editMenu = CreateMenuButton("Editar", new[] { "Deshacer (Ctrl+Z)", "Rehacer (Ctrl+Shift+Z)" });
-        editMenu.IdPressed += id => {
-            if (id == 0) _main.HistoryManager.Undo();
-            if (id == 1) _main.HistoryManager.Redo();
-        };
-        menuContainer.AddChild(editMenu);
-
-        var viewMenu = CreateMenuButton("Ver", new[] { "Zoom In", "Zoom Out", "Grid (G)" });
-        viewMenu.IdPressed += id => {
-            if (id == 0) _main.SetZoom(_main.Zoom + 0.1f);
-            if (id == 1) _main.SetZoom(_main.Zoom - 0.1f);
-            if (id == 2) _main.ToggleGrid();
-        };
-        menuContainer.AddChild(viewMenu);
-    }
-
-    private MenuButton CreateMenuButton(string text, string[] items)
-    {
-        var menu = new MenuButton();
-        menu.Text = text;
-        var popup = menu.GetPopup();
-        foreach (var item in items)
-        {
-            popup.AddItem(item);
-        }
-        return menu;
     }
 
     private void CreateToolbar()
     {
-        _toolbar = new VBoxContainer();
-        _toolbar.SetAnchorsPreset(Control.LayoutPreset.LeftWide);
-        _toolbar.Position = new Vector2(0, 30);
-        _toolbar.Size = new Vector2(50, 690);
+        _toolbar = new Control();
+        _toolbar.Name = "Toolbar";
+        _toolbar.AnchorRight = 1.0f;
+        _toolbar.OffsetBottom = 50;
+        _toolbar.BackgroundColor = new Color(0.2f, 0.2f, 0.2f);
         AddChild(_toolbar);
-
-        _brushBtn = CreateToolButton("🖌️", "Pincel (B)");
-        _brushBtn.Pressed += () => _main.ToolManager.SetTool("Pincel");
-        _toolbar.AddChild(_brushBtn);
-
-        _eraserBtn = CreateToolButton("🧼", "Borrador (E)");
-        _eraserBtn.Pressed += () => _main.ToolManager.SetTool("Borrador");
-        _toolbar.AddChild(_eraserBtn);
-
-        _pickerBtn = CreateToolButton("💉", "Selector (I)");
-        _pickerBtn.Pressed += () => _main.ToolManager.SetTool("Selector");
-        _toolbar.AddChild(_pickerBtn);
-
-        _moveBtn = CreateToolButton("✋", "Mover (V)");
-        _moveBtn.Pressed += () => _main.ToolManager.SetTool("Mover");
-        _toolbar.AddChild(_moveBtn);
-
-        _selectBtn = CreateToolButton("⬜", "Selección (M)");
-        _selectBtn.Pressed += () => _main.ToolManager.SetTool("Selección");
-        _toolbar.AddChild(_selectBtn);
-
-        _toolbar.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
-
-        // Selector de color primario
-        _primaryColorPicker = new ColorPickerButton();
-        _primaryColorPicker.Color = Colors.Black;
-        _primaryColorPicker.CustomMinimumSize = new Vector2(40, 40);
-        _primaryColorPicker.ColorChanged += color => _main.PrimaryColor = color;
-        _toolbar.AddChild(_primaryColorPicker);
-
-        // Selector de color secundario
-        _secondaryColorPicker = new ColorPickerButton();
-        _secondaryColorPicker.Color = Colors.White;
-        _secondaryColorPicker.CustomMinimumSize = new Vector2(40, 40);
-        _secondaryColorPicker.ColorChanged += color => _main.SecondaryColor = color;
-        _toolbar.AddChild(_secondaryColorPicker);
+        
+        // Botones de herramientas
+        string[] tools = { "Pincel", "Borrador", "Selector", "Mover", "Seleccionar" };
+        string[] icons = { "🖌️", "🧹", "💉", "✋", "⬚" };
+        
+        HBoxCompat hbox = new HBoxCompat();
+        hbox.AddThemeConstantOverride("separation", 5);
+        hbox.SetPosition(new Vector2(10, 5));
+        _toolbar.AddChild(hbox);
+        
+        for (int i = 0; i < tools.Length; i++)
+        {
+            Button btn = new Button();
+            btn.Text = $"{icons[i]} {tools[i]}";
+            btn.CustomMinimumSize = new Vector2(100, 40);
+            btn.Pressed += () => _toolManager.SetTool(tools[i]);
+            hbox.AddChild(btn);
+        }
+        
+        // Selector de color
+        _colorPicker = new ColorPickerButton();
+        _colorPicker.Color = Colors.Black;
+        _colorPicker.CustomMinimumSize = new Vector2(60, 40);
+        _colorPicker.Position = new Vector2(600, 5);
+        _colorPicker.ColorChanged += (color) => _main.SetCurrentColor(color);
+        _toolbar.AddChild(_colorPicker);
     }
 
-    private Button CreateToolButton(string icon, string tooltip)
+    private void CreatePropertiesPanel()
     {
-        var btn = new Button();
-        btn.Text = icon;
-        btn.CustomMinimumSize = new Vector2(40, 40);
-        btn.TooltipText = tooltip;
-        btn.Flat = true;
-        return btn;
+        _propertiesPanel = new Control();
+        _propertiesPanel.Name = "PropertiesPanel";
+        _propertiesPanel.OffsetRight = 250;
+        _propertiesPanel.AnchorBottom = 1.0f;
+        _propertiesPanel.OffsetBottom = -50;
+        _propertiesPanel.BackgroundColor = new Color(0.15f, 0.15f, 0.15f);
+        AddChild(_propertiesPanel);
+        
+        VBoxCompat vbox = new VBoxCompat();
+        vbox.AddThemeConstantOverride("separation", 10);
+        vbox.SetPosition(new Vector2(10, 10));
+        vbox.SetSize(new Vector2(230, 400));
+        _propertiesPanel.AddChild(vbox);
+        
+        // Título
+        Label title = new Label();
+        title.Text = "Propiedades";
+        title.AddThemeColorOverride("font_color", Colors.White);
+        vbox.AddChild(title);
+        
+        // Tamaño de pincel
+        Label brushLabel = new Label();
+        brushLabel.Text = "Tamaño Pincel:";
+        brushLabel.AddThemeColorOverride("font_color", Colors.White);
+        vbox.AddChild(brushLabel);
+        
+        HSlider brushSlider = new HSlider();
+        brushSlider.MinValue = 1;
+        brushSlider.MaxValue = 100;
+        brushSlider.Step = 1;
+        brushSlider.Value = 10;
+        brushSlider.ValueChanged += (value) => {
+            var brush = _toolManager.GetToolByName("Pincel") as Tools.BrushTool;
+            if (brush != null) brush.BrushSize = (float)value;
+        };
+        vbox.AddChild(brushSlider);
+        
+        // Opacidad
+        Label opacityLabel = new Label();
+        opacityLabel.Text = "Opacidad:";
+        opacityLabel.AddThemeColorOverride("font_color", Colors.White);
+        vbox.AddChild(opacityLabel);
+        
+        HSlider opacitySlider = new HSlider();
+        opacitySlider.MinValue = 0;
+        opacitySlider.MaxValue = 1;
+        opacitySlider.Step = 0.01f;
+        opacitySlider.Value = 1;
+        opacitySlider.ValueChanged += (value) => {
+            var brush = _toolManager.GetToolByName("Pincel") as Tools.BrushTool;
+            if (brush != null) brush.Opacity = (float)value;
+            var eraser = _toolManager.GetToolByName("Borrador") as Tools.EraserTool;
+            if (eraser != null) eraser.Opacity = (float)value;
+        };
+        vbox.AddChild(opacitySlider);
     }
 
-    private void CreateRightPanel()
+    private void CreateLayersPanel()
     {
-        var rightPanel = new VBoxContainer();
-        rightPanel.SetAnchorsPreset(Control.LayoutPreset.RightWide);
-        rightPanel.Position = new Vector2(-250, 30);
-        rightPanel.Size = new Vector2(250, 690);
-        AddChild(rightPanel);
-
-        // Configuración del pincel
-        _brushSettings = new VBoxContainer();
-        rightPanel.AddChild(_brushSettings);
-
-        _brushSettings.AddChild(CreateLabel("Tamaño del Pincel"));
-        _sizeSlider = CreateSlider(1, 100, 10);
-        _sizeSlider.ValueChanged += v => {
-            var tool = _main.ToolManager.CurrentTool as Tools.BrushTool;
-            if (tool != null) tool.BrushSize = (float)v;
-        };
-        _brushSettings.AddChild(_sizeSlider);
-
-        _brushSettings.AddChild(CreateLabel("Dureza"));
-        _hardnessSlider = CreateSlider(0, 1, 1);
-        _hardnessSlider.ValueChanged += v => {
-            var tool = _main.ToolManager.CurrentTool as Tools.BrushTool;
-            if (tool != null) tool.BrushHardness = (float)v;
-        };
-        _brushSettings.AddChild(_hardnessSlider);
-
-        _brushSettings.AddChild(CreateLabel("Opacidad"));
-        _opacitySlider = CreateSlider(0, 1, 1);
-        _opacitySlider.ValueChanged += v => {
-            var tool = _main.ToolManager.CurrentTool as Tools.BrushTool;
-            if (tool != null) tool.Opacity = (float)v;
-        };
-        _brushSettings.AddChild(_opacitySlider);
-
-        _brushSettings.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
-
-        // Panel de capas
-        _layersPanel = new VBoxContainer();
-        rightPanel.AddChild(_layersPanel);
-
-        _layersPanel.AddChild(CreateLabel("Capas"));
-
-        var layerButtons = new HBoxContainer();
-        _newLayerBtn = CreateSmallButton("+");
-        _newLayerBtn.Pressed += () => _main.LayerManager.CreateLayer($"Capa {_main.LayerManager.LayerCount + 1}");
-        layerButtons.AddChild(_newLayerBtn);
-
-        _deleteLayerBtn = CreateSmallButton("-");
+        _layersPanel = new Control();
+        _layersPanel.Name = "LayersPanel";
+        _layersPanel.AnchorRight = 1.0f;
+        _layersPanel.OffsetLeft = -250;
+        _layersPanel.AnchorBottom = 1.0f;
+        _layersPanel.OffsetBottom = -50;
+        _layersPanel.BackgroundColor = new Color(0.15f, 0.15f, 0.15f);
+        AddChild(_layersPanel);
+        
+        VBoxCompat vbox = new VBoxCompat();
+        vbox.AddThemeConstantOverride("separation", 5);
+        vbox.SetPosition(new Vector2(10, 10));
+        vbox.SetSize(new Vector2(230, 400));
+        _layersPanel.AddChild(vbox);
+        
+        // Título
+        Label title = new Label();
+        title.Text = "Capas";
+        title.AddThemeColorOverride("font_color", Colors.White);
+        vbox.AddChild(title);
+        
+        // Lista de capas
+        ScrollContainer scroll = new ScrollContainer();
+        scroll.CustomMinimumSize = new Vector2(230, 300);
+        vbox.AddChild(scroll);
+        
+        _layersList = new VBoxCompat();
+        _layersList.AddThemeConstantOverride("separation", 2);
+        scroll.AddChild(_layersList);
+        
+        // Botones de capas
+        HBoxCompat btnHbox = new HBoxCompat();
+        btnHbox.AddThemeConstantOverride("separation", 5);
+        vbox.AddChild(btnHbox);
+        
+        _newLayerBtn = new Button();
+        _newLayerBtn.Text = "+ Nueva";
+        _newLayerBtn.Pressed += () => _layerManager.CreateLayer($"Capa {_layerManager.LayerCount + 1}");
+        btnHbox.AddChild(_newLayerBtn);
+        
+        _deleteLayerBtn = new Button();
+        _deleteLayerBtn.Text = "Eliminar";
         _deleteLayerBtn.Pressed += () => {
-            if (_main.LayerManager.ActiveLayer != null)
-                _main.LayerManager.RemoveLayer(_main.LayerManager.ActiveLayer);
+            if (_layerManager.ActiveLayer != null)
+                _layerManager.RemoveLayer(_layerManager.ActiveLayer);
         };
-        layerButtons.AddChild(_deleteLayerBtn);
-
-        _duplicateLayerBtn = CreateSmallButton("📋");
-        _duplicateLayerBtn.Pressed += () => _main.LayerManager.DuplicateLayer();
-        layerButtons.AddChild(_duplicateLayerBtn);
-
-        _mergeDownBtn = CreateSmallButton("⬇️");
-        _mergeDownBtn.Pressed += () => _main.LayerManager.MergeDown();
-        layerButtons.AddChild(_mergeDownBtn);
-
-        _flattenBtn = CreateSmallButton("⚡");
-        _flattenBtn.Pressed += () => _main.LayerManager.Flatten();
-        layerButtons.AddChild(_flattenBtn);
-
-        _layersPanel.AddChild(layerButtons);
-
-        _layerList = new ItemList();
-        _layerList.CustomMinimumSize = new Vector2(0, 200);
-        _layerList.ItemSelected += index => {
-            var layers = _main.LayerManager.Layers;
-            if (index < layers.Count)
-                _main.LayerManager.SetActiveLayer(layers[index]);
-        };
-        _layersPanel.AddChild(_layerList);
-
-        UpdateLayerList();
-    }
-
-    private Label CreateLabel(string text)
-    {
-        var label = new Label();
-        label.Text = text;
-        return label;
-    }
-
-    private HSlider CreateSlider(double min, double max, double value)
-    {
-        var slider = new HSlider();
-        slider.MinValue = min;
-        slider.MaxValue = max;
-        slider.Value = value;
-        slider.Step = 0.1;
-        return slider;
-    }
-
-    private Button CreateSmallButton(string text)
-    {
-        var btn = new Button();
-        btn.Text = text;
-        btn.CustomMinimumSize = new Vector2(40, 30);
-        return btn;
+        btnHbox.AddChild(_deleteLayerBtn);
+        
+        _mergeDownBtn = new Button();
+        _mergeDownBtn.Text = "Fusionar";
+        _mergeDownBtn.Pressed += () => _layerManager.MergeDown();
+        btnHbox.AddChild(_mergeDownBtn);
+        
+        _flattenBtn = new Button();
+        _flattenBtn.Text = "Aplanar";
+        _flattenBtn.Pressed += () => _layerManager.Flatten();
+        btnHbox.AddChild(_flattenBtn);
+        
+        RefreshLayersList();
     }
 
     private void CreateStatusBar()
     {
-        var statusBar = new HBoxContainer();
-        statusBar.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
-        statusBar.Position = new Vector2(0, -30);
-        statusBar.Size = new Vector2(1280, 30);
+        Control statusBar = new Control();
+        statusBar.Name = "StatusBar";
+        statusBar.AnchorTop = 1.0f;
+        statusBar.AnchorRight = 1.0f;
+        statusBar.OffsetTop = -30;
+        statusBar.OffsetBottom = 0;
+        statusBar.BackgroundColor = new Color(0.1f, 0.1f, 0.1f);
         AddChild(statusBar);
-
-        _statusLabel = new Label();
-        _statusLabel.Text = "PhotoGodot Pro v2.0 - Listo";
-        statusBar.AddChild(_statusLabel);
-
-        statusBar.AddChild(new Control { CustomMinimumSize = new Vector2(20, 0) });
-
-        _cursorLabel = new Label();
-        _cursorLabel.Text = "X: 0 Y: 0";
-        statusBar.AddChild(_cursorLabel);
-
-        statusBar.AddChild(new Control { CustomMinimumSize = new Vector2(20, 0) });
-
-        _zoomLabel = new Label();
-        _zoomLabel.Text = "100%";
-        statusBar.AddChild(_zoomLabel);
-    }
-
-    private void CreateNotification()
-    {
-        _notificationPanel = new Panel();
-        _notificationPanel.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
-        _notificationPanel.Position = new Vector2(-150, 50);
-        _notificationPanel.Size = new Vector2(300, 50);
-        _notificationPanel.Visible = false;
-        AddChild(_notificationPanel);
-
-        _notificationLabel = new Label();
-        _notificationLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _notificationLabel.VerticalAlignment = VerticalAlignment.Center;
-        _notificationLabel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _notificationPanel.AddChild(_notificationLabel);
-
-        _notificationTimer = new Timer();
-        _notificationTimer.WaitTime = 2.0;
-        _notificationTimer.OneShot = true;
-        _notificationTimer.Timeout += () => _notificationPanel.Visible = false;
-        AddChild(_notificationTimer);
-    }
-
-    public void UpdateLayerList()
-    {
-        _layerList.Clear();
-        var layers = _main.LayerManager.Layers;
         
-        for (int i = 0; i < layers.Count; i++)
+        HBoxCompat hbox = new HBoxCompat();
+        hbox.AddThemeConstantOverride("separation", 20);
+        hbox.SetPosition(new Vector2(10, 5));
+        statusBar.AddChild(hbox);
+        
+        Label infoLabel = new Label();
+        infoLabel.Text = "PhotoGodot Pro v2.0 | B: Pincel, E: Borrador, I: Selector, V: Mover, M: Selección, G: Grid, Ctrl+Z: Undo, Ctrl+S: Exportar";
+        infoLabel.AddThemeColorOverride("font_color", Colors.Gray);
+        hbox.AddChild(infoLabel);
+        
+        _zoomLabel = new Label();
+        _zoomLabel.Text = "Zoom: 100%";
+        _zoomLabel.AddThemeColorOverride("font_color", Colors.Gray);
+        hbox.AddChild(_zoomLabel);
+    }
+
+    private void ConnectSignals()
+    {
+        _layerManager.LayerListChanged += RefreshLayersList;
+        _layerManager.ActiveLayerChanged += (layer) => RefreshLayersList();
+    }
+
+    private void RefreshLayersList()
+    {
+        foreach (var child in _layersList.GetChildren())
         {
-            var layer = layers[i];
-            string icon = layer.IsVisible ? "👁️" : "🚫";
-            string active = layer == _main.LayerManager.ActiveLayer ? " ✅" : "";
-            _layerList.AddItem($"{icon} {layer.LayerName}{active}");
+            child.QueueFree();
+        }
+        
+        int idx = 0;
+        foreach (var layer in _layerManager.Layers)
+        {
+            Button layerBtn = new Button();
+            layerBtn.Text = $"{(layer == _layerManager.ActiveLayer ? "▶ " : "")}{layer.LayerName}";
+            layerBtn.AddThemeColorOverride("font_color", layer == _layerManager.ActiveLayer ? Colors.Yellow : Colors.White);
+            
+            int captureIdx = idx;
+            layerBtn.Pressed += () => _layerManager.SetActiveLayer(layer);
+            
+            // Doble click para renombrar (simplificado)
+            _layersList.AddChild(layerBtn);
+            idx++;
         }
     }
 
-    public void UpdateActiveLayer(Layer layer)
+    public void UpdateColorPicker(Color color)
     {
-        UpdateLayerList();
+        if (_colorPicker != null)
+            _colorPicker.Color = color;
     }
 
-    public void UpdateCursorPosition(Vector2 pos)
+    public void UpdateZoomLabel(float zoom)
     {
-        _cursorLabel.Text = $"X: {(int)pos.X} Y: {(int)pos.Y}";
-    }
-
-    public void UpdateZoomDisplay(float zoom)
-    {
-        _zoomLabel.Text = $"{(int)(zoom * 100)}%";
-    }
-
-    public void ShowNotification(string message)
-    {
-        _notificationLabel.Text = message;
-        _notificationPanel.Visible = true;
-        _notificationTimer.Start();
-    }
-
-    private void OnToolChanged(BaseTool tool)
-    {
-        // Actualizar estado visual de los botones
-        _brushBtn.Flat = tool.ToolName != "Pincel";
-        _eraserBtn.Flat = tool.ToolName != "Borrador";
-        _pickerBtn.Flat = tool.ToolName != "Selector";
-        _moveBtn.Flat = tool.ToolName != "Mover";
-        _selectBtn.Flat = tool.ToolName != "Selección";
-        
-        _statusLabel.Text = $"Herramienta: {tool.ToolName}";
+        if (_zoomLabel != null)
+            _zoomLabel.Text = $"Zoom: {(int)(zoom * 100)}%";
     }
 }
+
+// Clases compat para Godot 4.x
+public partial class VBoxCompat : VBoxContainer { }
+public partial class HBoxCompat : HBoxContainer { }

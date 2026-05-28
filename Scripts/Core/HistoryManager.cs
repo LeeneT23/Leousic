@@ -41,6 +41,8 @@ public partial class HistoryManager : Node
 
         var state = _undoStack.Pop();
         
+        if (state.LayerIndex >= _layerManager.Layers.Count) return;
+        
         var currentLayer = _layerManager.Layers[state.LayerIndex];
         var currentState = new HistoryState
         {
@@ -60,6 +62,8 @@ public partial class HistoryManager : Node
 
         var state = _redoStack.Pop();
         
+        if (state.LayerIndex >= _layerManager.Layers.Count) return;
+
         var currentLayer = _layerManager.Layers[state.LayerIndex];
         var currentState = new HistoryState
         {

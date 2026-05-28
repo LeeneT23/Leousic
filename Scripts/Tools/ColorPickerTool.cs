@@ -1,18 +1,23 @@
 using Godot;
-using PhotoGodot.Core;
 
 namespace PhotoGodot.Tools;
 
 public partial class ColorPickerTool : BaseTool
 {
+    public ColorPickerTool()
+    {
+        ToolName = "Selector";
+        ShortcutKey = "i";
+    }
+
     public override void OnActivate()
     {
-        GD.Print("💉 Selector de color activado");
+        MainScene.SetCursor("cross");
     }
 
     public override void OnInput(InputEvent e)
     {
-        if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+        if (e is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left && mb.Pressed)
         {
             Vector2 pos = MainScene.GetCanvasPosition(mb.Position);
             PickColor(pos);
@@ -24,11 +29,6 @@ public partial class ColorPickerTool : BaseTool
         if (LayerManager.ActiveLayer == null) return;
         
         Color picked = LayerManager.ActiveLayer.GetPixel(pos);
-        
-        if (picked.A > 0)
-        {
-            MainScene.PrimaryColor = picked;
-            GD.Print($"🎨 Color seleccionado: {picked.ToHtml()}");
-        }
+        MainScene.SetCurrentColor(picked);
     }
 }
