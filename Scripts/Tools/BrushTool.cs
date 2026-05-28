@@ -1,146 +1,133 @@
 using Godot;
 using System;
-using System.Collections.Generic;
 
-/// <summary>
-/// Herramienta de pincel para dibujar trazos libres.
-/// Soporta presión, opacidad, dureza y tamaños variables.
-/// </summary>
-public partial class BrushTool : BaseTool
+namespace PhotoGodot.Tools;
+
+public partial class BrushTool : Core.BaseTool
 {
-    private List<Vector2> _currentStroke = new();
+    public override string Name => "Brush";
+    public override string Description => "Draw with customizable brush";
     
-    public BrushTool()
+    private bool _hasStartedDrawing = false;
+
+    protected override void OnActivate()
     {
-        ToolName = "Pincel";
-        ToolDescription = "Dibuja trazos libres con el color seleccionado";
-        BrushSize = 10.0f;
-        Opacity = 1.0f;
+        _hasStartedDrawing = false;
     }
-    
-    protected override void OnDrawStart(Vector2 position)
+
+    protected override void OnLeftMouseDown(Vector2 position)
     {
-        _currentStroke.Clear();
-        _currentStroke.Add(position);
+        _hasStartedDrawing = false;
+        DrawAtPosition(position);
+        _hasStartedDrawing = true;
+        SaveState("Brush Stroke", "Drew with brush");
     }
-    
+
     protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
     {
-        if (Canvas == null)
-            return;
-        
-        _currentStroke.Add(to);
-        
-        // Dibujar en tiempo real (preview)
-        var activeLayer = Canvas.GetLayer(Canvas.GetLayer(0)?.Id ?? -1);
-        if (activeLayer != null && activeLayer.Texture != null && !activeLayer.Locked)
+        if (!_hasStartedDrawing)
         {
-            Image img = activeLayer.Texture.GetImage();
-            img.Lock();
-            
-            DrawBrushStroke(img, from, to, PrimaryColor, BrushSize, Opacity);
-            
-            img.Unlock();
-            activeLayer.Texture.Update(img);
-            Canvas.MarkLayerAsModified(activeLayer.Id);
-        }
-    }
-    
-    protected override void OnDrawEnd(Vector2 position)
-    {
-        // El trazo ya fue dibujado en tiempo real
-        _currentStroke.Clear();
-    }
-    
-    private void DrawBrushStroke(Image img, Vector2 from, Vector2 to, Color color, float size, float opacity)
-    {
-        int radius = (int)(size / 2);
-        int steps = (int)from.DistanceTo(to);
-        
-        if (steps == 0)
-        {
-            DrawBrushCircle(img, from, radius, color, opacity);
+            DrawAtPosition(to);
+            _hasStartedDrawing = true;
             return;
         }
         
-        Vector2 direction = (to - from).Normalized();
-        
-        for (int i = 0; i <= steps; i++)
-        {
-            Vector2 pos = from + direction * i;
-            DrawBrushCircle(img, pos, radius, color, opacity);
-        }
+        // Bresenham's line algorithm for smooth strokes
+        DrawLine(from, to);
     }
-    
-    private void DrawBrushCircle(Image img, Vector2 center, int radius, Color color, float opacity)
+
+    protected override void OnLeftMouseUp(Vector2 position)
     {
-        Color colorWithOpacity = new Color(color.R, color.G, color.B, color.A * opacity);
+        _hasStartedDrawing = false;
+    }
+
+    private void DrawAtPosition(Vector2 position)
+    {
+        if (WorkingLayer == null) return;
         
-        // Hardness determina qué tan suave es el borde
-        float hardness = BrushHardness;
-        int softRadius = (int)(radius * (1 - hardness));
+        var layerPos = ScreenToLayer(position);
+        int x = (int)layerPos.X;
+        int y = (int)layerPos.Y;
+        float radius = BrushSize / 2;
         
-        for (int y = -radius; y <= radius; y++)
+        if (Hardness >= 0.95f)
         {
-            for (int x = -radius; x <= radius; x++)
+            // Hard brush - fill circle
+            for (int dy = -(int)Mathf.Ceil(radius); dy <= (int)Mathf.Ceil(radius); dy++)
             {
-                float distance = Mathf.Sqrt(x * x + y * y);
-                
-                if (distance <= radius)
+                for (int dx = -(int)Mathf.Ceil(radius); dx <= (int)Mathf.Ceil(radius); dx++)
                 {
-                    int px = (int)(center.X + x);
-                    int py = (int)(center.Y + y);
+                    int px = x + dx;
+                    int py = y + dy;
                     
-                    if (px >= 0 && px < img.GetSize().X && py >= 0 && py < img.GetSize().Y)
+                    if (dx * dx + dy * dy <= radius * radius)
                     {
-                        float alphaMultiplier = 1.0f;
-                        
-                        // Aplicar suavizado basado en hardness
-                        if (distance > softRadius && hardness < 1.0f)
-                        {
-                            float t = (distance - softRadius) / (radius - softRadius);
-                            alphaMultiplier = 1.0f - t * t; // Curva suave
-                        }
-                        
-                        Color finalColor = new Color(
-                            colorWithOpacity.R,
-                            colorWithOpacity.G,
-                            colorWithOpacity.B,
-                            colorWithOpacity.A * alphaMultiplier
-                        );
-                        
-                        Color existing = img.GetPixel(px, py);
-                        Color blended = BlendColors(existing, finalColor);
-                        img.SetPixel(px, py, blended);
+                        WorkingLayer.DrawPixel(px, py, PrimaryColor, Opacity);
                     }
                 }
             }
         }
-    }
-    
-    private Color BlendColors(Color background, Color foreground)
-    {
-        float alpha = foreground.A;
-        return new Color(
-            background.R * (1 - alpha) + foreground.R * alpha,
-            background.G * (1 - alpha) + foreground.G * alpha,
-            background.B * (1 - alpha) + foreground.B * alpha,
-            Mathf.Max(background.A, foreground.A)
-        );
-    }
-    
-    public override Dictionary<string, Variant> GetToolSettings()
-    {
-        var settings = base.GetToolSettings();
-        settings["PrimaryColor"] = PrimaryColor;
-        return settings;
-    }
-    
-    public override void ApplyToolSettings(Dictionary<string, Variant> settings)
-    {
-        base.ApplyToolSettings(settings);
+        else
+        {
+            // Soft brush - gradient falloff
+            float softnessRadius = radius * (1 - Hardness);
+            
+            for (int dy = -(int)Mathf.Ceil(radius); dy <= (int)Mathf.Ceil(radius); dy++)
+            {
+                for (int dx = -(int)Mathf.Ceil(radius); dx <= (int)Mathf.Ceil(radius); dx++)
+                {
+                    int px = x + dx;
+                    int py = y + dy;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    
+                    if (dist <= radius)
+                    {
+                        float alpha = Opacity;
+                        
+                        if (dist > softnessRadius)
+                        {
+                            // Falloff zone
+                            float t = (dist - softnessRadius) / (radius - softnessRadius);
+                            alpha *= 1 - t;
+                        }
+                        else if (Hardness > 0)
+                        {
+                            // Partial hardness
+                            float t = dist / softnessRadius;
+                            alpha *= 1 - t * (1 - Hardness);
+                        }
+                        
+                        WorkingLayer.DrawPixel(px, py, PrimaryColor, alpha);
+                    }
+                }
+            }
+        }
         
-        if (settings.TryGetValue("PrimaryColor", out var color))
-            PrimaryColor = color.AsColor();
+        WorkingLayer.UpdateTexture();
+    }
+
+    private void DrawLine(Vector2 from, Vector2 to)
+    {
+        int x0 = (int)from.X;
+        int y0 = (int)from.Y;
+        int x1 = (int)to.X;
+        int y1 = (int)to.Y;
+        
+        int dx = Math.Abs(x1 - x0);
+        int dy = Math.Abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = (dx > dy ? dx : -dy) / 2;
+        
+        while (true)
+        {
+            DrawAtPosition(new Vector2(x0, y0));
+            
+            if (x0 == x1 && y0 == y1) break;
+            
+            int e2 = err;
+            if (e2 > -dx) { err -= dy; x0 += sx; }
+            if (e2 < dy) { err += dx; y0 += sy; }
+        }
     }
 }

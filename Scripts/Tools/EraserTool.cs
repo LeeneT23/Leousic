@@ -1,114 +1,104 @@
 using Godot;
-using System.Collections.Generic;
 
-/// <summary>
-/// Herramienta de borrador para eliminar contenido de las capas.
-/// Funciona como un pincel que restaura la transparencia.
-/// </summary>
-public partial class EraserTool : BaseTool
+namespace PhotoGodot.Tools;
+
+public partial class EraserTool : Core.BaseTool
 {
-    private List<Vector2> _currentStroke = new();
-    
-    public EraserTool()
+    public override string Name => "Eraser";
+    public override string Description => "Erase pixels from the current layer";
+
+    private bool _hasStartedDrawing = false;
+
+    protected override void OnActivate()
     {
-        ToolName = "Borrador";
-        ToolDescription = "Elimina contenido de la capa activa";
-        BrushSize = 20.0f;
-        Opacity = 1.0f;
+        _hasStartedDrawing = false;
     }
-    
-    protected override void OnDrawStart(Vector2 position)
+
+    protected override void OnLeftMouseDown(Vector2 position)
     {
-        _currentStroke.Clear();
-        _currentStroke.Add(position);
+        _hasStartedDrawing = false;
+        EraseAtPosition(position);
+        _hasStartedDrawing = true;
+        SaveState("Eraser Stroke", "Erased pixels");
     }
-    
+
     protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
     {
-        if (Canvas == null)
-            return;
-        
-        _currentStroke.Add(to);
-        
-        var activeLayer = Canvas.GetLayer(Canvas.GetLayer(0)?.Id ?? -1);
-        if (activeLayer != null && activeLayer.Texture != null && !activeLayer.Locked)
+        if (!_hasStartedDrawing)
         {
-            Image img = activeLayer.Texture.GetImage();
-            img.Lock();
-            
-            DrawEraserStroke(img, from, to, BrushSize, Opacity);
-            
-            img.Unlock();
-            activeLayer.Texture.Update(img);
-            Canvas.MarkLayerAsModified(activeLayer.Id);
-        }
-    }
-    
-    protected override void OnDrawEnd(Vector2 position)
-    {
-        _currentStroke.Clear();
-    }
-    
-    private void DrawEraserStroke(Image img, Vector2 from, Vector2 to, float size, float opacity)
-    {
-        int radius = (int)(size / 2);
-        int steps = (int)from.DistanceTo(to);
-        
-        if (steps == 0)
-        {
-            DrawEraserCircle(img, from, radius, opacity);
+            EraseAtPosition(to);
+            _hasStartedDrawing = true;
             return;
         }
         
-        Vector2 direction = (to - from).Normalized();
-        
-        for (int i = 0; i <= steps; i++)
-        {
-            Vector2 pos = from + direction * i;
-            DrawEraserCircle(img, pos, radius, opacity);
-        }
+        DrawLine(from, to);
     }
-    
-    private void DrawEraserCircle(Image img, Vector2 center, int radius, float opacity)
+
+    protected override void OnLeftMouseUp(Vector2 position)
     {
-        float hardness = BrushHardness;
-        int softRadius = (int)(radius * (1 - hardness));
+        _hasStartedDrawing = false;
+    }
+
+    private void EraseAtPosition(Vector2 position)
+    {
+        if (WorkingLayer == null) return;
         
-        for (int y = -radius; y <= radius; y++)
+        var layerPos = ScreenToLayer(position);
+        int x = (int)layerPos.X;
+        int y = (int)layerPos.Y;
+        float radius = BrushSize / 2;
+        
+        for (int dy = -(int)Mathf.Ceil(radius); dy <= (int)Mathf.Ceil(radius); dy++)
         {
-            for (int x = -radius; x <= radius; x++)
+            for (int dx = -(int)Mathf.Ceil(radius); dx <= (int)Mathf.Ceil(radius); dx++)
             {
-                float distance = Mathf.Sqrt(x * x + y * y);
+                int px = x + dx;
+                int py = y + dy;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
                 
-                if (distance <= radius)
+                if (dist <= radius)
                 {
-                    int px = (int)(center.X + x);
-                    int py = (int)(center.Y + y);
+                    float alpha = Opacity;
                     
-                    if (px >= 0 && px < img.GetSize().X && py >= 0 && py < img.GetSize().Y)
+                    // Soft eraser falloff
+                    if (Hardness < 1.0f && dist > radius * Hardness)
                     {
-                        float alphaMultiplier = 1.0f;
-                        
-                        if (distance > softRadius && hardness < 1.0f)
-                        {
-                            float t = (distance - softRadius) / (radius - softRadius);
-                            alphaMultiplier = 1.0f - t * t;
-                        }
-                        
-                        Color existing = img.GetPixel(px, py);
-                        float eraseAmount = opacity * alphaMultiplier;
-                        
-                        Color erased = new Color(
-                            existing.R,
-                            existing.G,
-                            existing.B,
-                            Mathf.Max(0, existing.A - eraseAmount)
-                        );
-                        
-                        img.SetPixel(px, py, erased);
+                        float t = (dist - radius * Hardness) / (radius * (1 - Hardness));
+                        alpha *= 1 - t;
                     }
+                    
+                    var current = WorkingLayer.Image.GetPixel(px, py);
+                    float newAlpha = Mathf.Max(0, current.A - alpha);
+                    WorkingLayer.Image.SetPixel(px, py, new Color(current.R, current.G, current.B, newAlpha));
                 }
             }
+        }
+        
+        WorkingLayer.UpdateTexture();
+    }
+
+    private void DrawLine(Vector2 from, Vector2 to)
+    {
+        int x0 = (int)from.X;
+        int y0 = (int)from.Y;
+        int x1 = (int)to.X;
+        int y1 = (int)to.Y;
+        
+        int dx = Math.Abs(x1 - x0);
+        int dy = Math.Abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = (dx > dy ? dx : -dy) / 2;
+        
+        while (true)
+        {
+            EraseAtPosition(new Vector2(x0, y0));
+            
+            if (x0 == x1 && y0 == y1) break;
+            
+            int e2 = err;
+            if (e2 > -dx) { err -= dy; x0 += sx; }
+            if (e2 < dy) { err += dx; y0 += sy; }
         }
     }
 }

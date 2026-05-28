@@ -2,203 +2,184 @@ using Godot;
 using System;
 using System.Collections.Generic;
 
-/// <summary>
-/// Gestiona el ciclo de vida y la selección de herramientas.
-/// Permite registrar herramientas personalizadas dinámicamente.
-/// </summary>
+namespace PhotoGodot.Core;
+
 public partial class ToolManager : Node
 {
-    [Signal] public delegate void ToolChangedEventHandler(string toolName);
-    
-    private Dictionary<string, BaseTool> _tools = new();
+    private readonly Dictionary<string, BaseTool> _tools = new();
     private BaseTool? _currentTool;
     
-    [Export] public DrawingCanvas? Canvas { get; set; }
-    [Export] public MainUI? UI { get; set; }
+    public BaseTool? CurrentTool => _currentTool;
+    public string? CurrentToolName => _currentTool?.Name;
     
-    public override void _Ready()
-    {
-        RegisterBuiltInTools();
-    }
+    // Tool properties (shared across tools)
+    public Color PrimaryColor { get; set; } = Colors.Black;
+    public Color SecondaryColor { get; set; } = Colors.White;
+    public float BrushSize { get; set; } = 10f;
+    public float Opacity { get; set; } = 1.0f;
+    public float Hardness { get; set; } = 1.0f;
     
-    /// <summary>
-    /// Registra las herramientas incorporadas por defecto
-    /// </summary>
-    private void RegisterBuiltInTools()
+    public event Action<BaseTool?>? OnToolChanged;
+    public event Action? OnToolPropertiesChanged;
+
+    private DrawingCanvas? _canvas;
+    private LayerManager? _layerManager;
+    private HistoryManager? _historyManager;
+
+    public void Initialize(DrawingCanvas canvas, LayerManager layerManager, HistoryManager historyManager)
     {
-        RegisterTool(new BrushTool());
-        RegisterTool(new EraserTool());
-        RegisterTool(new ColorPickerTool());
-        RegisterTool(new MoveTool());
-        RegisterTool(new SelectTool());
+        _canvas = canvas;
+        _layerManager = layerManager;
+        _historyManager = historyManager;
         
-        GD.Print($"[ToolManager] { _tools.Count} herramientas registradas");
+        RegisterAllTools();
     }
-    
-    /// <summary>
-    /// Registra una nueva herramienta (puede ser personalizada)
-    /// </summary>
+
+    private void RegisterAllTools()
+    {
+        RegisterTool(new Tools.BrushTool());
+        RegisterTool(new Tools.EraserTool());
+        RegisterTool(new Tools.ColorPickerTool());
+        RegisterTool(new Tools.MoveTool());
+        RegisterTool(new Tools.SelectTool());
+        
+        // Select brush by default
+        SelectTool("Brush");
+    }
+
     public void RegisterTool(BaseTool tool)
     {
-        if (tool == null)
+        if (_canvas == null || _layerManager == null || _historyManager == null)
         {
-            GD.PrintErr("[ToolManager] Intento de registrar herramienta nula");
+            GD.PrintErr("[ToolManager] Cannot register tool before initialization");
             return;
         }
         
-        string toolId = tool.GetType().Name;
+        tool.Initialize(_canvas, _layerManager, _historyManager);
+        _tools[tool.Name] = tool;
         
-        if (_tools.ContainsKey(toolId))
-        {
-            GD.Print($"[ToolManager] Actualizando herramienta: {tool.ToolName}");
-            _tools[toolId] = tool;
-        }
-        else
-        {
-            _tools.Add(toolId, tool);
-            GD.Print($"[ToolManager] Nueva herramienta registrada: {tool.ToolName}");
-        }
-        
-        tool.Initialize(Canvas!, UI!);
-        AddChild(tool);
-        
-        // Notificar a la UI si es necesario
-        if (UI != null)
-        {
-            UI.OnToolRegistered(tool);
-        }
+        GD.Print($"[ToolManager] Registered tool: {tool.Name}");
     }
-    
-    /// <summary>
-    /// Activa una herramienta por su ID
-    /// </summary>
-    public void ActivateTool(string toolId)
+
+    public bool SelectTool(string toolName)
     {
-        if (!_tools.ContainsKey(toolId))
+        if (!_tools.ContainsKey(toolName))
         {
-            GD.PrintErr($"[ToolManager] Herramienta no encontrada: {toolId}");
-            return;
+            GD.PrintErr($"[ToolManager] Tool not found: {toolName}");
+            return false;
         }
         
-        // Desactivar herramienta actual
-        if (_currentTool != null && _currentTool.GetType().Name != toolId)
-        {
-            _currentTool.OnDeactivate();
-        }
+        // Deactivate current tool
+        _currentTool?.Deactivate();
         
-        // Activar nueva herramienta
-        _currentTool = _tools[toolId];
-        _currentTool.OnActivate();
+        // Activate new tool
+        _currentTool = _tools[toolName];
+        _currentTool.Activate();
         
-        EmitSignal(SignalName.ToolChanged, _currentTool.ToolName);
-        GD.Print($"[ToolManager] Herramienta activa: {_currentTool.ToolName}");
+        // Apply current properties
+        UpdateCurrentToolProperties();
+        
+        OnToolChanged?.Invoke(_currentTool);
+        GD.Print($"[ToolManager] Selected tool: {toolName}");
+        
+        return true;
     }
-    
-    /// <summary>
-    /// Activa una herramienta por instancia
-    /// </summary>
-    public void ActivateTool(BaseTool tool)
+
+    public bool SelectTool<T>() where T : BaseTool
     {
-        string toolId = tool.GetType().Name;
-        ActivateTool(toolId);
+        var toolType = typeof(T).Name;
+        return SelectTool(toolType.Replace("Tool", ""));
     }
-    
-    /// <summary>
-    /// Obtiene la herramienta actual
-    /// </summary>
-    public BaseTool? GetCurrentTool()
+
+    public void SetPrimaryColor(Color color)
     {
-        return _currentTool;
+        PrimaryColor = color;
+        UpdateCurrentToolProperties();
+        OnToolPropertiesChanged?.Invoke();
     }
-    
-    /// <summary>
-    /// Obtiene todas las herramientas registradas
-    /// </summary>
-    public Dictionary<string, BaseTool> GetAllTools()
+
+    public void SetSecondaryColor(Color color)
     {
-        return new Dictionary<string, BaseTool>(_tools);
+        SecondaryColor = color;
+        OnToolPropertiesChanged?.Invoke();
     }
-    
-    /// <summary>
-    /// Procesa el input para la herramienta actual
-    /// </summary>
-    public void ProcessInput(InputEvent @event)
+
+    public void SetBrushSize(float size)
     {
-        if (_currentTool == null || Canvas == null)
-            return;
-        
-        // Manejar eventos de mouse en el canvas
-        if (@event is InputEventMouseButton mouseButton)
-        {
-            Vector2 canvasPos = GetCanvasPosition(mouseButton.Position);
-            
-            if (mouseButton.Pressed)
-            {
-                bool shift = Input.IsKeyPressed(Key.Shift);
-                bool ctrl = Input.IsKeyPressed(Key.Ctrl);
-                bool alt = Input.IsKeyPressed(Key.Alt);
-                
-                _currentTool.OnInputPressed(canvasPos, mouseButton.ButtonIndex, shift, ctrl, alt);
-            }
-            else
-            {
-                _currentTool.OnInputReleased(canvasPos, mouseButton.ButtonIndex);
-            }
-        }
-        else if (@event is InputEventMouseMotion mouseMotion)
-        {
-            Vector2 canvasPos = GetCanvasPosition(mouseMotion.Position);
-            Vector2 delta = mouseMotion.Relative;
-            
-            _currentTool.OnInputDragged(canvasPos, delta, mouseMotion.ButtonMask);
-        }
-        
-        // Procesar input general (teclado, etc.)
-        _currentTool.ProcessInput(@event);
+        BrushSize = Mathf.Max(1, size);
+        UpdateCurrentToolProperties();
+        OnToolPropertiesChanged?.Invoke();
     }
-    
-    /// <summary>
-    /// Convierte posición de pantalla a posición del canvas
-    /// </summary>
-    private Vector2 GetCanvasPosition(Vector2 screenPos)
+
+    public void SetOpacity(float opacity)
     {
-        if (Canvas == null)
-            return screenPos;
-        
-        // Obtener la transformación del viewport
-        Viewport viewport = GetViewport();
-        if (viewport != null)
-        {
-            // Considerar zoom y paneo
-            Vector2 offset = Canvas.GetGlobalTransform().Origin;
-            float zoom = Canvas.CurrentZoom;
-            
-            return (screenPos - offset) / zoom;
-        }
-        
-        return screenPos;
+        Opacity = Mathf.Clamp(opacity, 0, 1);
+        UpdateCurrentToolProperties();
+        OnToolPropertiesChanged?.Invoke();
     }
-    
-    /// <summary>
-    /// Actualiza los ajustes de la herramienta actual
-    /// </summary>
-    public void UpdateCurrentToolSettings(Dictionary<string, Variant> settings)
+
+    public void SetHardness(float hardness)
+    {
+        Hardness = Mathf.Clamp(hardness, 0, 1);
+        UpdateCurrentToolProperties();
+        OnToolPropertiesChanged?.Invoke();
+    }
+
+    private void UpdateCurrentToolProperties()
     {
         if (_currentTool != null)
         {
-            _currentTool.ApplyToolSettings(settings);
+            _currentTool.UpdateProperties(BrushSize, Opacity, Hardness, PrimaryColor);
         }
     }
-    
-    /// <summary>
-    /// Obtiene los ajustes de la herramienta actual
-    /// </summary>
-    public Dictionary<string, Variant> GetCurrentToolSettings()
+
+    public IReadOnlyDictionary<string, BaseTool> GetAllTools() => _tools;
+
+    public BaseTool? GetTool(string name)
     {
-        if (_currentTool != null)
+        return _tools.TryGetValue(name, out var tool) ? tool : null;
+    }
+
+    public void HandleKeyDown(Keycode keycode)
+    {
+        _currentTool?.OnKeyDown(keycode);
+    }
+
+    public void Undo()
+    {
+        if (_historyManager == null || _layerManager == null) return;
+        
+        var entry = _historyManager.Undo();
+        if (entry != null && entry.LayerData != null)
         {
-            return _currentTool.GetToolSettings();
+            var layer = _layerManager.GetLayer(entry.LayerIndex);
+            if (layer != null)
+            {
+                var img = Image.New();
+                img.LoadPngFromBuffer(entry.LayerData);
+                layer.Image = img;
+                layer.UpdateTexture();
+                _layerManager.OnLayersChanged?.Invoke();
+            }
         }
-        return new Dictionary<string, Variant>();
+    }
+
+    public void Redo()
+    {
+        if (_historyManager == null || _layerManager == null) return;
+        
+        var entry = _historyManager.Redo();
+        if (entry != null && entry.LayerData != null)
+        {
+            var layer = _layerManager.GetLayer(entry.LayerIndex);
+            if (layer != null)
+            {
+                var img = Image.New();
+                img.LoadPngFromBuffer(entry.LayerData);
+                layer.Image = img;
+                layer.UpdateTexture();
+                _layerManager.OnLayersChanged?.Invoke();
+            }
+        }
     }
 }

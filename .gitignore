@@ -1,76 +1,25 @@
 ```
-# Godot-specific ignores
-*.import
-*.uid
-export_presets.cfg
-godot_vcs_ignore.cfg
-
 # Build artifacts
-*.exe
-*.dll
-*.so
-*.dylib
-*.pdb
-*.exp
-*.lib
-*.app
-*.apk
-*.aab
-*.zip
-*.tar.gz
+*.import
+*.tmp
+temp/
+
+# Godot specific
+.project
+.sconsign
+*.scn.import
+*.tres.import
+*.res.import
+export_presets.cfg
 
 # Dependencies
-node_modules/
-venv/
-.venv/
-__pycache__/
-*.egg-info/
-build/
-dist/
-target/
-.gradle/
-.mypy_cache/
-.pytest_cache/
+addons/
+*.import
 
-# Editor/IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
+# Logs
 *.log
+
+# OS generated files
 .DS_Store
 Thumbs.db
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Compressed files
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.bz2
-*.tar.xz
-*.tar.zst
 ```

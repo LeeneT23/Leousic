@@ -1,294 +1,339 @@
 using Godot;
 using System;
-using System.Collections.Generic;
 
-/// <summary>
-/// Representa una capa individual en el proyecto.
-/// Cada capa tiene su propia textura, visibilidad, opacidad y modo de fusión.
-/// </summary>
-public partial class Layer : Resource
+namespace PhotoGodot.Core;
+
+public partial class Layer : RefCounted
 {
-    [Signal] public delegate void LayerChangedEventHandler();
+    public string Name { get; set; } = "Layer";
+    public Image Image { get; private set; }
+    public bool Visible { get; set; } = true;
+    public float Opacity { get; set; } = 1.0f;
+    public Texture2D Texture { get; private set; }
+    public CanvasBlendMode BlendMode { get; set; } = CanvasBlendMode.Mix;
     
-    public enum BlendModes
+    public int Width => Image?.GetWidth() ?? 0;
+    public int Height => Image?.GetHeight() ?? 0;
+
+    public enum CanvasBlendMode
     {
-        Normal,
+        Mix,
+        Add,
+        Subtract,
         Multiply,
         Screen,
-        Overlay,
-        Darken,
-        Lighten
+        Overlay
     }
-    
-    [Export] public int Id { get; set; }
-    [Export] public string Name { get; set; } = "Capa";
-    [Export] public ImageTexture? Texture { get; set; }
-    [Export] public bool Visible { get; set; } = true;
-    [Export] public float Opacity { get; set; } = 1.0f;
-    [Export] public BlendModes BlendMode { get; set; } = BlendModes.Normal;
-    [Export] public Vector2 Offset { get; set; } = Vector2.Zero;
-    [Export] public bool Locked { get; set; } = false;
-    
-    private bool _isModified = false;
-    
-    public bool IsModified => _isModified;
-    
-    /// <summary>
-    /// Crea una nueva capa vacía
-    /// </summary>
-    public static Layer Create(int id, string name, int width, int height)
+
+    public Layer(int width, int height, string name = "Layer")
     {
-        var layer = new Layer
+        Name = name;
+        Image = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+        Image.Fill(Colors.Transparent);
+        UpdateTexture();
+    }
+
+    public Layer(Image image, string name = "Layer")
+    {
+        Name = name;
+        Image = image;
+        UpdateTexture();
+    }
+
+    public void UpdateTexture()
+    {
+        if (Image != null)
         {
-            Id = id,
-            Name = name
-        };
-        
-        Image image = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
-        image.Fill(Colors.Transparent);
-        layer.Texture = ImageTexture.CreateFromImage(image);
-        
-        return layer;
-    }
-    
-    /// <summary>
-    /// Crea una capa desde una imagen existente
-    /// </summary>
-    public static Layer CreateFromImage(int id, string name, Image image)
-    {
-        var layer = new Layer
-        {
-            Id = id,
-            Name = name
-        };
-        
-        layer.Texture = ImageTexture.CreateFromImage(image);
-        
-        return layer;
-    }
-    
-    /// <summary>
-    /// Obtiene la imagen subyacente de la textura
-    /// </summary>
-    public Image GetImage()
-    {
-        if (Texture == null)
-            return new Image();
-        
-        return Texture.GetImage();
-    }
-    
-    /// <summary>
-    /// Actualiza la textura con una nueva imagen
-    /// </summary>
-    public void UpdateTexture(Image image)
-    {
-        if (Texture != null)
-        {
-            Texture.Update(image);
-            _isModified = true;
-            EmitSignal(SignalName.LayerChanged);
+            var imgCopy = Image.Duplicate();
+            
+            if (Opacity < 1.0f)
+            {
+                for (int y = 0; y < imgCopy.GetHeight(); y++)
+                {
+                    for (int x = 0; x < imgCopy.GetWidth(); x++)
+                    {
+                        var pixel = imgCopy.GetPixel(x, y);
+                        pixel.A *= Opacity;
+                        imgCopy.SetPixel(x, y, pixel);
+                    }
+                }
+            }
+            
+            Texture = ImageTexture.CreateFromImage(imgCopy);
         }
     }
-    
-    /// <summary>
-    /// Limpia el contenido de la capa
-    /// </summary>
+
+    public void DrawPixel(int x, int y, Color color, float alpha = 1.0f)
+    {
+        if (x < 0 || x >= Width || y < 0 || y >= Height) return;
+        
+        var current = Image.GetPixel(x, y);
+        var blended = BlendColors(current, color * alpha, alpha);
+        Image.SetPixel(x, y, blended);
+    }
+
+    public void DrawLine(Vector2 from, Vector2 to, Color color, float width, float alpha = 1.0f)
+    {
+        Image.DrawLine(from, to, color * new Color(1, 1, 1, alpha), (int)Mathf.Ceil(width));
+    }
+
+    public void DrawCircle(Vector2 center, float radius, Color color, bool filled = true, float alpha = 1.0f)
+    {
+        if (filled)
+        {
+            Image.FillCircle(center, (int)radius, color * new Color(1, 1, 1, alpha));
+        }
+        else
+        {
+            // Draw circle outline
+            for (float angle = 0; angle < Mathf.Tau; angle += 0.05f)
+            {
+                var point = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+                Image.SetPixel((int)point.X, (int)point.Y, color * new Color(1, 1, 1, alpha));
+            }
+        }
+    }
+
+    public void FillRect(Rect2 rect, Color color, float alpha = 1.0f)
+    {
+        for (int y = (int)rect.Position.Y; y < rect.End.Y && y < Height; y++)
+        {
+            for (int x = (int)rect.Position.X; x < rect.End.X && x < Width; x++)
+            {
+                if (x >= 0 && y >= 0)
+                {
+                    DrawPixel(x, y, color, alpha);
+                }
+            }
+        }
+    }
+
     public void Clear()
     {
-        if (Texture != null)
-        {
-            Image image = Texture.GetImage();
-            image.Fill(Colors.Transparent);
-            Texture.Update(image);
-            _isModified = true;
-            EmitSignal(SignalName.LayerChanged);
-        }
+        Image.Fill(Colors.Transparent);
+        UpdateTexture();
     }
-    
-    /// <summary>
-    /// Duplica esta capa
-    /// </summary>
-    public Layer Duplicate()
+
+    public void ApplyFilter(Func<Color, Color> filterFunc)
     {
-        var newLayer = new Layer
+        for (int y = 0; y < Height; y++)
         {
-            Id = GenerateUniqueId(),
-            Name = $"{Name} (copia)",
-            Visible = Visible,
-            Opacity = Opacity,
-            BlendMode = BlendMode,
-            Offset = Offset,
-            Locked = Locked
-        };
-        
-        if (Texture != null)
-        {
-            Image image = Texture.GetImage().Duplicate();
-            newLayer.Texture = ImageTexture.CreateFromImage(image);
-        }
-        
-        return newLayer;
-    }
-    
-    /// <summary>
-    /// Genera un ID único para la capa
-    /// </summary>
-    private static int GenerateUniqueId()
-    {
-        return (int)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % int.MaxValue);
-    }
-    
-    /// <summary>
-    /// Aplica un filtro a la capa
-    /// </summary>
-    public void ApplyFilter(string filterName)
-    {
-        if (Texture == null)
-            return;
-        
-        Image image = Texture.GetImage();
-        image.Lock();
-        
-        switch (filterName.ToLower())
-        {
-            case "grayscale":
-                ApplyGrayscale(image);
-                break;
-            case "invert":
-                ApplyInvert(image);
-                break;
-            case "blur":
-                ApplyBlur(image);
-                break;
-            case "sharpen":
-                ApplySharpen(image);
-                break;
-            case "brightness_up":
-                ApplyBrightness(image, 0.2f);
-                break;
-            case "brightness_down":
-                ApplyBrightness(image, -0.2f);
-                break;
-            case "contrast_up":
-                ApplyContrast(image, 0.3f);
-                break;
-            case "contrast_down":
-                ApplyContrast(image, -0.3f);
-                break;
-        }
-        
-        image.Unlock();
-        Texture.Update(image);
-        _isModified = true;
-        EmitSignal(SignalName.LayerChanged);
-    }
-    
-    private void ApplyGrayscale(Image image)
-    {
-        for (int y = 0; y < image.GetSize().Y; y++)
-        {
-            for (int x = 0; x < image.GetSize().X; x++)
+            for (int x = 0; x < Width; x++)
             {
-                Color pixel = image.GetPixel(x, y);
-                float gray = (pixel.R + pixel.G + pixel.B) / 3;
-                image.SetPixel(x, y, new Color(gray, gray, gray, pixel.A));
+                var pixel = Image.GetPixel(x, y);
+                Image.SetPixel(x, y, filterFunc(pixel));
             }
         }
+        UpdateTexture();
     }
-    
-    private void ApplyInvert(Image image)
+
+    public void ApplyBlur(int radius = 2)
     {
-        for (int y = 0; y < image.GetSize().Y; y++)
+        var blurred = Image.Duplicate();
+        for (int y = 0; y < Height; y++)
         {
-            for (int x = 0; x < image.GetSize().X; x++)
+            for (int x = 0; x < Width; x++)
             {
-                Color pixel = image.GetPixel(x, y);
-                image.SetPixel(x, y, new Color(1 - pixel.R, 1 - pixel.G, 1 - pixel.B, pixel.A));
-            }
-        }
-    }
-    
-    private void ApplyBlur(Image image)
-    {
-        // Blur simple de 3x3
-        Image blurred = image.Duplicate();
-        
-        for (int y = 1; y < image.GetSize().Y - 1; y++)
-        {
-            for (int x = 1; x < image.GetSize().X - 1; x++)
-            {
-                Color sum = Colors.Black;
+                Color sum = Colors.Transparent;
+                int count = 0;
                 
-                for (int dy = -1; dy <= 1; dy++)
+                for (int dy = -radius; dy <= radius; dy++)
                 {
-                    for (int dx = -1; dx <= 1; dx++)
+                    for (int dx = -radius; dx <= radius; dx++)
                     {
-                        sum += image.GetPixel(x + dx, y + dy);
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        
+                        if (nx >= 0 && nx < Width && ny >= 0 && ny < Height)
+                        {
+                            sum += Image.GetPixel(nx, ny);
+                            count++;
+                        }
                     }
                 }
                 
-                blurred.SetPixel(x, y, sum / 9);
+                if (count > 0)
+                {
+                    blurred.SetPixel(x, y, sum / count);
+                }
             }
         }
-        
-        image.Blend(blurred);
+        Image = blurred;
+        UpdateTexture();
     }
-    
-    private void ApplySharpen(Image image)
+
+    public void ApplySharpen()
     {
-        // Sharpen simple
-        Image sharpened = image.Duplicate();
+        var sharpened = Image.Duplicate();
+        float[,] kernel = {
+            { 0, -1, 0 },
+            { -1, 5, -1 },
+            { 0, -1, 0 }
+        };
         
-        for (int y = 1; y < image.GetSize().Y - 1; y++)
+        for (int y = 1; y < Height - 1; y++)
         {
-            for (int x = 1; x < image.GetSize().X - 1; x++)
+            for (int x = 1; x < Width - 1; x++)
             {
-                Color center = image.GetPixel(x, y);
-                Color sum = image.GetPixel(x - 1, y) + image.GetPixel(x + 1, y) +
-                           image.GetPixel(x, y - 1) + image.GetPixel(x, y + 1);
+                Color sum = Colors.Black;
                 
-                Color result = center * 5 - sum;
-                sharpened.SetPixel(x, y, result);
+                for (int ky = -1; ky <= 1; ky++)
+                {
+                    for (int kx = -1; kx <= 1; kx++)
+                    {
+                        var pixel = Image.GetPixel(x + kx, y + ky);
+                        sum += pixel * kernel[ky + 1, kx + 1];
+                    }
+                }
+                
+                sharpened.SetPixel(x, y, sum);
             }
         }
-        
-        image.Blend(sharpened);
+        Image = sharpened;
+        UpdateTexture();
     }
-    
-    private void ApplyBrightness(Image image, float amount)
+
+    public void Grayscale()
     {
-        for (int y = 0; y < image.GetSize().Y; y++)
+        ApplyFilter(c =>
         {
-            for (int x = 0; x < image.GetSize().X; x++)
-            {
-                Color pixel = image.GetPixel(x, y);
-                image.SetPixel(x, y, new Color(
-                    Mathf.Clamp(pixel.R + amount, 0, 1),
-                    Mathf.Clamp(pixel.G + amount, 0, 1),
-                    Mathf.Clamp(pixel.B + amount, 0, 1),
-                    pixel.A
-                ));
-            }
-        }
+            float gray = c.R * 0.299f + c.G * 0.587f + c.B * 0.114f;
+            return new Color(gray, gray, gray, c.A);
+        });
     }
-    
-    private void ApplyContrast(Image image, float amount)
+
+    public void Invert()
+    {
+        ApplyFilter(c => new Color(1 - c.R, 1 - c.G, 1 - c.B, c.A));
+    }
+
+    public void AdjustBrightness(float amount)
+    {
+        ApplyFilter(c =>
+        {
+            return new Color(
+                Mathf.Clamp(c.R + amount, 0, 1),
+                Mathf.Clamp(c.G + amount, 0, 1),
+                Mathf.Clamp(c.B + amount, 0, 1),
+                c.A
+            );
+        });
+    }
+
+    public void AdjustContrast(float amount)
     {
         float factor = (1 + amount) / (1 - amount);
-        
-        for (int y = 0; y < image.GetSize().Y; y++)
+        ApplyFilter(c =>
         {
-            for (int x = 0; x < image.GetSize().X; x++)
+            return new Color(
+                Mathf.Clamp(factor * (c.R - 0.5f) + 0.5f, 0, 1),
+                Mathf.Clamp(factor * (c.G - 0.5f) + 0.5f, 0, 1),
+                Mathf.Clamp(factor * (c.B - 0.5f) + 0.5f, 0, 1),
+                c.A
+            );
+        });
+    }
+
+    public Image GetCompositedImage(Layer[] layersBelow)
+    {
+        var result = Image.Duplicate();
+        
+        foreach (var layer in layersBelow)
+        {
+            if (!layer.Visible) continue;
+            
+            for (int y = 0; y < Height; y++)
             {
-                Color pixel = image.GetPixel(x, y);
-                image.SetPixel(x, y, new Color(
-                    Mathf.Clamp((pixel.R - 0.5f) * factor + 0.5f, 0, 1),
-                    Mathf.Clamp((pixel.G - 0.5f) * factor + 0.5f, 0, 1),
-                    Mathf.Clamp((pixel.B - 0.5f) * factor + 0.5f, 0, 1),
-                    pixel.A
-                ));
+                for (int x = 0; x < Width; x++)
+                {
+                    var below = layer.Image.GetPixel(x, y);
+                    var above = result.GetPixel(x, y);
+                    result.SetPixel(x, y, CompositePixels(below, above, layer.BlendMode));
+                }
             }
         }
+        
+        return result;
+    }
+
+    private Color BlendColors(Color bg, Color fg, float alpha)
+    {
+        return new Color(
+            bg.R * (1 - alpha) + fg.R * alpha,
+            bg.G * (1 - alpha) + fg.G * alpha,
+            bg.B * (1 - alpha) + fg.B * alpha,
+            Mathf.Max(bg.A, fg.A * alpha)
+        );
+    }
+
+    private Color CompositePixels(Color below, Color above, CanvasBlendMode mode)
+    {
+        float a = above.A;
+        float b = below.A;
+        float outA = a + b * (1 - a);
+        
+        if (outA == 0) return Colors.Transparent;
+        
+        Color outRGB;
+        
+        switch (mode)
+        {
+            case CanvasBlendMode.Add:
+                outRGB = new Color(
+                    Mathf.Min(above.R * a + below.R * b, 1),
+                    Mathf.Min(above.G * a + below.G * b, 1),
+                    Mathf.Min(above.B * a + below.B * b, 1)
+                );
+                break;
+            case CanvasBlendMode.Subtract:
+                outRGB = new Color(
+                    Mathf.Max(above.R * a - below.R * b, 0),
+                    Mathf.Max(above.G * a - below.G * b, 0),
+                    Mathf.Max(above.B * a - below.B * b, 0)
+                );
+                break;
+            case CanvasBlendMode.Multiply:
+                outRGB = new Color(
+                    above.R * below.R + below.R * (1 - a) + above.R * (1 - b),
+                    above.G * below.G + below.G * (1 - a) + above.G * (1 - b),
+                    above.B * below.B + below.B * (1 - a) + above.B * (1 - b)
+                );
+                break;
+            case CanvasBlendMode.Screen:
+                outRGB = new Color(
+                    1 - (1 - above.R) * (1 - below.R),
+                    1 - (1 - above.G) * (1 - below.G),
+                    1 - (1 - above.B) * (1 - below.B)
+                );
+                break;
+            case CanvasBlendMode.Overlay:
+                outRGB = new Color(
+                    below.R < 0.5 ? 2 * above.R * below.R : 1 - 2 * (1 - above.R) * (1 - below.R),
+                    below.G < 0.5 ? 2 * above.G * below.G : 1 - 2 * (1 - above.G) * (1 - below.G),
+                    below.B < 0.5 ? 2 * above.B * below.B : 1 - 2 * (1 - above.B) * (1 - below.B)
+                );
+                break;
+            default: // Mix
+                outRGB = new Color(
+                    (above.R * a + below.R * b * (1 - a)) / outA,
+                    (above.G * a + below.G * b * (1 - a)) / outA,
+                    (above.B * a + below.B * b * (1 - a)) / outA
+                );
+                break;
+        }
+        
+        return new Color(outRGB.R, outRGB.G, outRGB.B, outA);
+    }
+
+    public byte[] SaveToBytes()
+    {
+        return Image.SavePngToBuffer();
+    }
+
+    public static Layer LoadFromBytes(byte[] data, int width, int height, string name = "Layer")
+    {
+        var img = Image.New();
+        img.LoadPngFromBuffer(data);
+        return new Layer(img, name);
     }
 }

@@ -1,7 +1,10 @@
-[gd_scene load_steps=2 format=3 uid="uid://main_scene"]
+[gd_scene load_steps=3 format=3 uid="uid://main_scene_photo_godot"]
 
 [sub_resource type="GDScript" id="GDScript_main"]
 script/path = "res://Scripts/Main.cs"
+
+[sub_resource type="GDScript" id="GDScript_mainui"]
+script/path = "res://Scripts/UI/MainUI.cs"
 
 [node name="Main" type="Node"]
 script = SubResource("GDScript_main")
@@ -43,141 +46,18 @@ theme_override_constants/separation = 8
 [node name="MenuButton_File" type="MenuButton" parent="MainUI/MarginContainer/VBoxContainer/TopPanel/MenuBar"]
 custom_minimum_size/x = 80
 text = "Archivo"
-menu/items = [{
-"text": "Nuevo",
-"id": 0,
-"shortcut": {
-"type": "Shortcut",
-"events": [{
-"type": "InputEventKey",
-"physical_keycode": 78,
-"ctrl_pressed": true
-}]
-}
-}, {
-"text": "Abrir",
-"id": 1,
-"shortcut": {
-"type": "Shortcut",
-"events": [{
-"type": "InputEventKey",
-"physical_keycode": 79,
-"ctrl_pressed": true
-}]
-}
-}, {
-"text": "Guardar",
-"id": 2,
-"shortcut": {
-"type": "Shortcut",
-"events": [{
-"type": "InputEventKey",
-"physical_keycode": 83,
-"ctrl_pressed": true
-}]
-}
-}, {
-"text": "Exportar PNG",
-"id": 3
-}, {
-"text": "Exportar JPG",
-"id": 4
-}]
 
 [node name="MenuButton_Edit" type="MenuButton" parent="MainUI/MarginContainer/VBoxContainer/TopPanel/MenuBar"]
 custom_minimum_size/x = 80
 text = "Editar"
-menu/items = [{
-"text": "Deshacer",
-"id": 0,
-"shortcut": {
-"type": "Shortcut",
-"events": [{
-"type": "InputEventKey",
-"physical_keycode": 90,
-"ctrl_pressed": true
-}]
-}
-}, {
-"text": "Rehacer",
-"id": 1,
-"shortcut": {
-"type": "Shortcut",
-"events": [{
-"type": "InputEventKey",
-"physical_keycode": 89,
-"ctrl_pressed": true
-}]
-}
-}]
 
 [node name="MenuButton_Layer" type="MenuButton" parent="MainUI/MarginContainer/VBoxContainer/TopPanel/MenuBar"]
 custom_minimum_size/x = 80
 text = "Capa"
-menu/items = [{
-"text": "Nueva Capa",
-"id": 0,
-"shortcut": {
-"type": "Shortcut",
-"events": [{
-"type": "InputEventKey",
-"physical_keycode": 76,
-"ctrl_pressed": true
-}]
-}
-}, {
-"text": "Duplicar Capa",
-"id": 1
-}, {
-"text": "Eliminar Capa",
-"id": 2
-}, {
-"text": "Fusionar hacia abajo",
-"id": 3
-}, {
-"text": "Aplanar imagen",
-"id": 4
-}]
 
 [node name="MenuButton_View" type="MenuButton" parent="MainUI/MarginContainer/VBoxContainer/TopPanel/MenuBar"]
 custom_minimum_size/x = 80
 text = "Ver"
-menu/items = [{
-"text": "Mostrar Grid",
-"id": 0,
-"shortcut": {
-"type": "Shortcut",
-"events": [{
-"type": "InputEventKey",
-"physical_keycode": 71
-}]
-}
-}, {
-"text": "Zoom In",
-"id": 1,
-"shortcut": {
-"type": "Shortcut",
-"events": [{
-"type": "InputEventKey",
-"physical_keycode": 61,
-"ctrl_pressed": true
-}]
-}
-}, {
-"text": "Zoom Out",
-"id": 2,
-"shortcut": {
-"type": "Shortcut",
-"events": [{
-"type": "InputEventKey",
-"physical_keycode": 45,
-"ctrl_pressed": true
-}]
-}
-}, {
-"text": "Ajustar a ventana",
-"id": 3
-}]
 
 [node name="ToolBar" type="HBoxContainer" parent="MainUI/MarginContainer/VBoxContainer/TopPanel"]
 layout_mode = 2

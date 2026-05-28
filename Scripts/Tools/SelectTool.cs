@@ -1,200 +1,164 @@
 using Godot;
-using System.Collections.Generic;
 
-/// <summary>
-/// Herramienta de selección rectangular.
-/// Permite seleccionar áreas del canvas para operaciones posteriores.
-/// </summary>
-public partial class SelectTool : BaseTool
+namespace PhotoGodot.Tools;
+
+public partial class SelectTool : Core.BaseTool
 {
-    private Vector2 _selectionStart = Vector2.Zero;
-    private Rect2? _currentSelection;
+    public override string Name => "Select";
+    public override string Description => "Make rectangular selections";
+
+    public bool HasSelection { get; private set; }
+    public Rect2 SelectionRect { get; private set; }
     
-    public SelectTool()
+    private bool _isSelecting = false;
+    private Vector2 _startPos;
+
+    protected override void OnLeftMouseDown(Vector2 position)
     {
-        ToolName = "Selección";
-        ToolDescription = "Selecciona un área rectangular del canvas";
+        _isSelecting = true;
+        _startPos = position;
+        
+        var layerPos = ScreenToLayer(position);
+        SelectionRect = new Rect2(layerPos.X, layerPos.Y, 0, 0);
     }
-    
-    protected override void OnDrawStart(Vector2 position)
-    {
-        _selectionStart = position;
-        _currentSelection = null;
-    }
-    
+
     protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
     {
-        // Crear rectángulo de selección
-        Vector2 size = to - _selectionStart;
-        _currentSelection = new Rect2(_selectionStart, size);
+        if (!_isSelecting) return;
         
-        // La selección se muestra visualmente en el canvas
+        var fromLayer = ScreenToLayer(from);
+        var toLayer = ScreenToLayer(to);
+        
+        float x = Mathf.Min(fromLayer.X, toLayer.X);
+        float y = Mathf.Min(fromLayer.Y, toLayer.Y);
+        float width = Mathf.Abs(toLayer.X - fromLayer.X);
+        float height = Mathf.Abs(toLayer.Y - fromLayer.Y);
+        
+        SelectionRect = new Rect2(x, y, width, height);
+        HasSelection = width > 1 && height > 1;
+        
+        // Request canvas redraw to show selection
         if (Canvas != null)
         {
             Canvas.QueueRedraw();
         }
     }
-    
-    protected override void OnDrawEnd(Vector2 position)
+
+    protected override void OnLeftMouseUp(Vector2 position)
     {
-        if (_currentSelection.HasValue)
+        _isSelecting = false;
+        
+        if (HasSelection)
         {
-            GD.Print($"[SelectTool] Selección creada: {_currentSelection.Value}");
+            SaveState("Selection", "Created selection");
+            GD.Print($"[SelectTool] Selection: {SelectionRect}");
         }
     }
-    
-    /// <summary>
-    /// Obtiene el rectángulo de selección actual
-    /// </summary>
-    public Rect2? GetSelection()
-    {
-        return _currentSelection;
-    }
-    
-    /// <summary>
-    /// Limpia la selección actual
-    /// </summary>
+
     public void ClearSelection()
     {
-        _currentSelection = null;
-        if (Canvas != null)
-        {
-            Canvas.QueueRedraw();
-        }
+        HasSelection = false;
+        SelectionRect = new Rect2(0, 0, 0, 0);
+        Canvas?.QueueRedraw();
     }
-    
-    /// <summary>
-    /// Corta el contenido seleccionado a una nueva capa
-    /// </summary>
+
+    public void CopySelection()
+    {
+        if (!HasSelection || WorkingLayer == null) return;
+        
+        int x = (int)SelectionRect.Position.X;
+        int y = (int)SelectionRect.Position.Y;
+        int w = (int)SelectionRect.Size.X;
+        int h = (int)SelectionRect.Size.Y;
+        
+        if (w <= 0 || h <= 0) return;
+        
+        var cropped = WorkingLayer.Image.GetRegion(new Rect2I(x, y, w, h));
+        GD.Print($"[SelectTool] Copied region: {w}x{h}");
+        
+        // Could store for paste operation
+    }
+
     public void CutSelection()
     {
-        if (!_currentSelection.HasValue || Canvas == null)
-            return;
+        if (!HasSelection || WorkingLayer == null) return;
         
-        var activeLayer = Canvas.GetLayer(0);
-        if (activeLayer == null || activeLayer.Texture == null)
-            return;
+        CopySelection();
         
-        Image sourceImage = activeLayer.Texture.GetImage();
-        Rect2 selection = _currentSelection.Value;
-        
-        // Normalizar rectángulo (asegurar que tenga tamaño positivo)
-        selection = selection.Abs();
-        
-        int width = (int)selection.Size.X;
-        int height = (int)selection.Size.Y;
-        
-        if (width <= 0 || height <= 0)
-            return;
-        
-        // Crear nueva imagen con el contenido seleccionado
-        Image cutImage = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
-        
-        for (int y = 0; y < height; y++)
+        // Clear the selected area
+        for (int y = (int)SelectionRect.Position.Y; 
+             y < SelectionRect.End.Y && y < WorkingLayer.Height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (int x = (int)SelectionRect.Position.X; 
+                 x < SelectionRect.End.X && x < WorkingLayer.Width; x++)
             {
-                int srcX = (int)(selection.Position.X + x);
-                int srcY = (int)(selection.Position.Y + y);
-                
-                if (srcX >= 0 && srcX < sourceImage.GetSize().X && 
-                    srcY >= 0 && srcY < sourceImage.GetSize().Y)
+                if (x >= 0 && y >= 0)
                 {
-                    cutImage.SetPixel(x, y, sourceImage.GetPixel(srcX, srcY));
-                    
-                    // Hacer transparente el original
-                    sourceImage.SetPixel(srcX, srcY, Colors.Transparent);
+                    WorkingLayer.Image.SetPixel(x, y, Colors.Transparent);
                 }
             }
         }
         
-        // Actualizar capa original
-        activeLayer.Texture.Update(sourceImage);
-        Canvas.MarkLayerAsModified(activeLayer.Id);
-        
-        // Crear nueva capa con el contenido cortado
-        var newLayer = Layer.CreateFromImage(-1, "Selección", cutImage);
-        newLayer.Offset = selection.Position;
-        
-        GD.Print("[SelectTool] Contenido cortado a nueva capa");
+        WorkingLayer.UpdateTexture();
+        ClearSelection();
     }
-    
-    /// <summary>
-    /// Copia el contenido seleccionado
-    /// </summary>
-    public Image? CopySelection()
-    {
-        if (!_currentSelection.HasValue || Canvas == null)
-            return null;
-        
-        var activeLayer = Canvas.GetLayer(0);
-        if (activeLayer == null || activeLayer.Texture == null)
-            return null;
-        
-        Image sourceImage = activeLayer.Texture.GetImage();
-        Rect2 selection = _currentSelection.Value.Abs();
-        
-        int width = (int)selection.Size.X;
-        int height = (int)selection.Size.Y;
-        
-        if (width <= 0 || height <= 0)
-            return null;
-        
-        Image copyImage = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
-        
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                int srcX = (int)(selection.Position.X + x);
-                int srcY = (int)(selection.Position.Y + y);
-                
-                if (srcX >= 0 && srcX < sourceImage.GetSize().X && 
-                    srcY >= 0 && srcY < sourceImage.GetSize().Y)
-                {
-                    copyImage.SetPixel(x, y, sourceImage.GetPixel(srcX, srcY));
-                }
-            }
-        }
-        
-        GD.Print("[SelectTool] Contenido copiado");
-        return copyImage;
-    }
-    
-    /// <summary>
-    /// Rellena la selección con un color
-    /// </summary>
+
     public void FillSelection(Color color)
     {
-        if (!_currentSelection.HasValue || Canvas == null)
-            return;
+        if (!HasSelection || WorkingLayer == null) return;
         
-        var activeLayer = Canvas.GetLayer(0);
-        if (activeLayer == null || activeLayer.Texture == null)
-            return;
+        SaveState("Fill Selection", "Filled selection with color");
         
-        Image img = activeLayer.Texture.GetImage();
-        Rect2 selection = _currentSelection.Value.Abs();
+        WorkingLayer.FillRect(SelectionRect, color, Opacity);
+        WorkingLayer.UpdateTexture();
+    }
+
+    public void DeleteSelection()
+    {
+        if (!HasSelection || WorkingLayer == null) return;
         
-        int startX = Mathf.Max(0, (int)selection.Position.X);
-        int startY = Mathf.Max(0, (int)selection.Position.Y);
-        int endX = Mathf.Min(img.GetSize().X, (int)(selection.Position.X + selection.Size.X));
-        int endY = Mathf.Min(img.GetSize().Y, (int)(selection.Position.Y + selection.Size.Y));
+        SaveState("Delete Selection", "Deleted selected area");
         
-        img.Lock();
-        
-        for (int y = startY; y < endY; y++)
+        for (int y = (int)SelectionRect.Position.Y; 
+             y < SelectionRect.End.Y && y < WorkingLayer.Height; y++)
         {
-            for (int x = startX; x < endX; x++)
+            for (int x = (int)SelectionRect.Position.X; 
+                 x < SelectionRect.End.X && x < WorkingLayer.Width; x++)
             {
-                img.SetPixel(x, y, color);
+                if (x >= 0 && y >= 0)
+                {
+                    WorkingLayer.Image.SetPixel(x, y, Colors.Transparent);
+                }
             }
         }
         
-        img.Unlock();
-        activeLayer.Texture.Update(img);
-        Canvas.MarkLayerAsModified(activeLayer.Id);
-        
-        GD.Print($"[SelectTool] Selección rellenada con color {color.ToHtml()}");
+        WorkingLayer.UpdateTexture();
+        ClearSelection();
+    }
+
+    public override void OnKeyDown(Keycode keycode)
+    {
+        switch (keycode)
+        {
+            case Key.Delete:
+            case Key.BackSpace:
+                DeleteSelection();
+                break;
+            case Key.C:
+                if (Input.IsKeyPressed(Key.Ctrl))
+                {
+                    CopySelection();
+                }
+                break;
+            case Key.X:
+                if (Input.IsKeyPressed(Key.Ctrl))
+                {
+                    CutSelection();
+                }
+                break;
+            case Key.Escape:
+                ClearSelection();
+                break;
+        }
     }
 }
