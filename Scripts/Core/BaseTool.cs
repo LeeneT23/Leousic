@@ -23,7 +23,6 @@ public abstract partial class BaseTool : Resource
 
     public virtual void OnActivate() { }
     public virtual void OnDeactivate() { }
-
     public virtual void OnInput(InputEvent e) { }
 
     public virtual void OnBeginDraw(Vector2 pos)
@@ -33,10 +32,7 @@ public abstract partial class BaseTool : Resource
         History.SaveState($"{ToolName} Inicio");
     }
 
-    public virtual void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
-    {
-        // Implementar en subclases
-    }
+    public virtual void OnDraw(Vector2 from, Vector2 to, Vector2 delta) { }
 
     public virtual void OnEndDraw(Vector2 pos)
     {

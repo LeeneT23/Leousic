@@ -8,7 +8,6 @@ public partial class Layer : Resource
     [Export] public string LayerName { get; set; } = "Nueva Capa";
     [Export] public bool IsVisible { get; set; } = true;
     [Export] public float Opacity { get; set; } = 1.0f;
-    [Export] public CanvasItem.TextureBlendMode BlendMode { get; set; } = CanvasItem.TextureBlendMode.Mix;
     
     private Image _image;
     private Texture2D _texture;
@@ -25,7 +24,7 @@ public partial class Layer : Resource
         _texture = ImageTexture.CreateFromImage(_image);
     }
 
-    public void DrawPixel(Vector2 pos, Color color)
+    public void DrawPixel(Vector2 pos, Color color, float brushOpacity = 1.0f)
     {
         if (_image == null || !IsVisible) return;
         int x = (int)pos.X;
@@ -33,17 +32,19 @@ public partial class Layer : Resource
         
         if (x >= 0 && x < Width && y >= 0 && y < Height)
         {
-            color.A *= Opacity;
-            var current = _image.GetPixel(x, y);
-            float a = color.A + current.A * (1 - color.A);
+            Color current = _image.GetPixel(x, y);
+            float finalAlpha = color.A * brushOpacity * Opacity;
+            
+            // Alpha blending
+            float a = finalAlpha + current.A * (1 - finalAlpha);
             if (a == 0) return;
             
-            Vector3 rgb = (color.Rgb * color.A + current.Rgb * current.A * (1 - color.A)) / a;
+            Vector3 rgb = (color.Rgb * finalAlpha + current.Rgb * current.A * (1 - finalAlpha)) / a;
             _image.SetPixel(x, y, new Color(rgb.X, rgb.Y, rgb.Z, a));
         }
     }
 
-    public void DrawPixelWithAlpha(Vector2 pos, Color color, float alphaMultiplier = 1.0f)
+    public void ErasePixel(Vector2 pos, float brushOpacity = 1.0f)
     {
         if (_image == null || !IsVisible) return;
         int x = (int)pos.X;
@@ -51,8 +52,10 @@ public partial class Layer : Resource
         
         if (x >= 0 && x < Width && y >= 0 && y < Height)
         {
-            color.A *= Opacity * alphaMultiplier;
-            _image.SetPixel(x, y, color);
+            Color current = _image.GetPixel(x, y);
+            float eraseAmount = brushOpacity * Opacity;
+            float newAlpha = Math.Max(0, current.A - eraseAmount);
+            _image.SetPixel(x, y, new Color(current.R, current.G, current.B, newAlpha));
         }
     }
 

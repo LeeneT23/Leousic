@@ -1,16 +1,21 @@
 using Godot;
-using PhotoGodot.Core;
 
 namespace PhotoGodot.Tools;
 
 public partial class MoveTool : BaseTool
 {
+    private Vector2 _offset;
     private bool _isMoving = false;
-    private Vector2 _startPos;
+
+    public MoveTool()
+    {
+        ToolName = "Mover";
+        ShortcutKey = "v";
+    }
 
     public override void OnActivate()
     {
-        GD.Print("✋ Herramienta Mover activada");
+        MainScene.SetCursor("arrow");
     }
 
     public override void OnInput(InputEvent e)
@@ -22,8 +27,8 @@ public partial class MoveTool : BaseTool
             if (mb.ButtonIndex == MouseButton.Left && mb.Pressed)
             {
                 _isMoving = true;
-                _startPos = pos;
-                History.SaveState("Mover");
+                _offset = pos;
+                History.SaveState("Mover Inicio");
             }
             else if (mb.ButtonIndex == MouseButton.Left && !mb.Pressed)
             {
@@ -32,12 +37,10 @@ public partial class MoveTool : BaseTool
         }
         else if (e is InputEventMouseMotion mm && _isMoving)
         {
-            Vector2 currentPos = MainScene.GetCanvasPosition(mm.Position);
-            Vector2 delta = currentPos - _startPos;
-            
-            // Aquí se implementaría el movimiento real de la capa
-            // Por simplicidad, solo actualizamos la posición inicial
-            _startPos = currentPos;
+            Vector2 newPos = MainScene.GetCanvasPosition(mm.Position);
+            Vector2 delta = newPos - _offset;
+            // En una implementación completa, aquí se movería el contenido de la capa
+            _offset = newPos;
         }
     }
 }

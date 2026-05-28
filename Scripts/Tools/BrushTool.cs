@@ -1,19 +1,23 @@
 using Godot;
-using PhotoGodot.Core;
 
 namespace PhotoGodot.Tools;
 
 public partial class BrushTool : BaseTool
 {
     [Export] public float BrushSize { get; set; } = 10.0f;
-    [Export] public float BrushHardness { get; set; } = 1.0f;
+    [Export] public Color BrushColor { get; set; } = Colors.Black;
     [Export] public float Opacity { get; set; } = 1.0f;
-    
-    private Color _currentColor;
+    [Export] public float Hardness { get; set; } = 1.0f;
+
+    public BrushTool()
+    {
+        ToolName = "Pincel";
+        ShortcutKey = "b";
+    }
 
     public override void OnActivate()
     {
-        GD.Print("🖌️ Pincel activado");
+        MainScene.SetCursor("cross");
     }
 
     public override void OnInput(InputEvent e)
@@ -24,20 +28,12 @@ public partial class BrushTool : BaseTool
             
             if (mb.ButtonIndex == MouseButton.Left && mb.Pressed)
             {
-                _currentColor = MainScene.PrimaryColor;
                 OnBeginDraw(pos);
                 DrawAtPosition(pos);
             }
             else if (mb.ButtonIndex == MouseButton.Left && !mb.Pressed)
             {
                 OnEndDraw(pos);
-            }
-            
-            if (mb.ButtonIndex == MouseButton.Right && mb.Pressed)
-            {
-                _currentColor = MainScene.SecondaryColor;
-                OnBeginDraw(pos);
-                DrawAtPosition(pos);
             }
         }
         else if (e is InputEventMouseMotion mm && IsDrawing)
@@ -57,21 +53,14 @@ public partial class BrushTool : BaseTool
         {
             for (int x = -radius; x <= radius; x++)
             {
-                Vector2 offset = new(x, y);
+                Vector2 offset = new Vector2(x, y);
                 if (offset.Length() <= radius)
                 {
-                    float alpha = 1.0f;
-                    if (BrushHardness < 1.0f)
-                    {
-                        float dist = offset.Length() / radius;
-                        alpha = Math.Max(0, 1.0f - dist * (1.0f - BrushHardness));
-                    }
+                    float distFactor = 1.0f - (offset.Length() / radius);
+                    float alpha = distFactor < Hardness ? Opacity : Opacity * (1.0f - (distFactor - Hardness) / (1.0f - Hardness));
+                    if (Hardness >= 1.0f) alpha = Opacity;
                     
-                    LayerManager.ActiveLayer.DrawPixelWithAlpha(
-                        pos + offset, 
-                        _currentColor, 
-                        alpha * Opacity
-                    );
+                    LayerManager.ActiveLayer.DrawPixel(pos + offset, BrushColor, alpha);
                 }
             }
         }
@@ -81,7 +70,7 @@ public partial class BrushTool : BaseTool
     private void DrawLine(Vector2 from, Vector2 to)
     {
         float dist = from.DistanceTo(to);
-        int steps = (int)Math.Ceil(dist * 2);
+        int steps = (int)(dist * 2);
         
         for (int i = 0; i <= steps; i++)
         {
