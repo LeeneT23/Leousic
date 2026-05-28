@@ -1,6 +1,5 @@
 using Godot;
 using System;
-using System.Collections.Generic;
 
 namespace PhotoGodot.Core;
 
@@ -9,7 +8,7 @@ public partial class Layer : Resource
     [Export] public string LayerName { get; set; } = "Nueva Capa";
     [Export] public bool IsVisible { get; set; } = true;
     [Export] public float Opacity { get; set; } = 1.0f;
-    [Export] public int BlendModeIndex { get; set; } = 0; // 0=Mix, 1=Add, 2=Subtract, etc.
+    [Export] public CanvasItem.TextureBlendMode BlendMode { get; set; } = CanvasItem.TextureBlendMode.Mix;
     
     private Image _image;
     private Texture2D _texture;
@@ -34,9 +33,8 @@ public partial class Layer : Resource
         
         if (x >= 0 && x < Width && y >= 0 && y < Height)
         {
-            Color current = _image.GetPixel(x, y);
-            
-            // Mezcla Alpha estándar (Alpha Over)
+            color.A *= Opacity;
+            var current = _image.GetPixel(x, y);
             float a = color.A + current.A * (1 - color.A);
             if (a == 0) return;
             
@@ -45,10 +43,17 @@ public partial class Layer : Resource
         }
     }
 
-    public void DrawPixelWithOpacity(Vector2 pos, Color color, float opacity)
+    public void DrawPixelWithAlpha(Vector2 pos, Color color, float alphaMultiplier = 1.0f)
     {
-        color.A *= opacity;
-        DrawPixel(pos, color);
+        if (_image == null || !IsVisible) return;
+        int x = (int)pos.X;
+        int y = (int)pos.Y;
+        
+        if (x >= 0 && x < Width && y >= 0 && y < Height)
+        {
+            color.A *= Opacity * alphaMultiplier;
+            _image.SetPixel(x, y, color);
+        }
     }
 
     public void UpdateTexture()
@@ -83,9 +88,11 @@ public partial class Layer : Resource
     
     public void Fill(Color color)
     {
-        if (_image == null) return;
-        _image.Fill(color);
-        UpdateTexture();
+        if (_image != null)
+        {
+            _image.Fill(color);
+            UpdateTexture();
+        }
     }
     
     public void Clear()

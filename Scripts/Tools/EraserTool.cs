@@ -1,78 +1,81 @@
 using Godot;
+using PhotoGodot.Core;
 
 namespace PhotoGodot.Tools;
 
-public partial class EraserTool : Core.BaseTool
+public partial class EraserTool : BaseTool
 {
-    public EraserTool()
-    {
-        ToolName = "Eraser";
-    }
-
-    private float _size = 20f;
+    [Export] public float EraserSize { get; set; } = 15.0f;
+    [Export] public float Hardness { get; set; } = 0.5f;
 
     public override void OnActivate()
     {
-        if (MainScene != null)
-        {
-            _size = MainScene.BrushSize * 2;
-        }
+        GD.Print("🧼 Borrador activado");
     }
 
     public override void OnInput(InputEvent e)
     {
-        if (e is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+        if (e is InputEventMouseButton mb)
         {
-            var canvasPos = MainScene.ScreenToCanvas(mb.GlobalPosition);
+            Vector2 pos = MainScene.GetCanvasPosition(mb.Position);
             
-            if (mb.Pressed)
+            if (mb.ButtonIndex == MouseButton.Left && mb.Pressed)
             {
-                OnBeginDraw(canvasPos);
-                EraseStroke(LastPos, canvasPos, true);
+                OnBeginDraw(pos);
+                EraseAtPosition(pos);
             }
-            else if (IsDrawing)
+            else if (mb.ButtonIndex == MouseButton.Left && !mb.Pressed)
             {
-                OnEndDraw(canvasPos);
+                OnEndDraw(pos);
             }
         }
         else if (e is InputEventMouseMotion mm && IsDrawing)
         {
-            var canvasPos = MainScene.ScreenToCanvas(mm.GlobalPosition);
-            EraseStroke(LastPos, canvasPos);
-            LastPos = canvasPos;
+            Vector2 pos = MainScene.GetCanvasPosition(mm.Position);
+            EraseLine(LastPos, pos);
+            LastPos = pos;
         }
     }
 
-    private void EraseStroke(Vector2 from, Vector2 to, bool isPoint = false)
+    private void EraseAtPosition(Vector2 pos)
     {
         if (LayerManager.ActiveLayer == null) return;
-
-        float dist = from.DistanceTo(to);
-        int steps = isPoint ? 1 : (int)(dist / (_size * 0.3f));
         
-        for (int i = 0; i <= steps; i++)
+        int radius = (int)(EraserSize / 2);
+        for (int y = -radius; y <= radius; y++)
         {
-            float t = steps == 0 ? 0 : (float)i / steps;
-            Vector2 pos = from + (to - from) * t;
-            
-            int radius = (int)(_size / 2);
-            for (int y = -radius; y <= radius; y++)
+            for (int x = -radius; x <= radius; x++)
             {
-                for (int x = -radius; x <= radius; x++)
+                Vector2 offset = new(x, y);
+                if (offset.Length() <= radius)
                 {
-                    float dx = x;
-                    float dy = y;
-                    float distFromCenter = Mathf.Sqrt(dx * dx + dy * dy);
-                    
-                    if (distFromCenter <= radius)
+                    float alpha = 1.0f;
+                    if (Hardness < 1.0f)
                     {
-                        // Borrar = pintar con transparencia
-                        LayerManager.ActiveLayer.DrawPixel(pos + new Vector2(x, y), Colors.Transparent);
+                        float dist = offset.Length() / radius;
+                        alpha = Math.Max(0, 1.0f - dist * (1.0f - Hardness));
                     }
+                    
+                    var currentPos = pos + offset;
+                    var current = LayerManager.ActiveLayer.ImageData.GetPixel((int)currentPos.X, (int)currentPos.Y);
+                    current.A *= (1.0f - alpha);
+                    LayerManager.ActiveLayer.ImageData.SetPixel((int)currentPos.X, (int)currentPos.Y, current);
                 }
             }
         }
-        
         CommitChanges();
+    }
+
+    private void EraseLine(Vector2 from, Vector2 to)
+    {
+        float dist = from.DistanceTo(to);
+        int steps = (int)Math.Ceil(dist * 2);
+        
+        for (int i = 0; i <= steps; i++)
+        {
+            float t = (float)i / steps;
+            Vector2 pos = from.Lerp(to, t);
+            EraseAtPosition(pos);
+        }
     }
 }

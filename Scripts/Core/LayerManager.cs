@@ -4,27 +4,28 @@ using System.Linq;
 
 namespace PhotoGodot.Core;
 
-public partial class LayerManager : Node2D
+public partial class LayerManager : Node
 {
     public signal LayerListChanged();
     public signal ActiveLayerChanged(Layer layer);
 
     private List<Layer> _layers = new();
     private Layer _activeLayer;
+    private Node2D _renderContainer;
 
     public int LayerCount => _layers.Count;
     public Layer ActiveLayer => _activeLayer;
     public IReadOnlyList<Layer> Layers => _layers.AsReadOnly();
 
+    public override void _Ready()
+    {
+        _renderContainer = new Node2D();
+        _renderContainer.Name = "RenderContainer";
+        AddChild(_renderContainer);
+    }
+
     public void Setup(int width, int height, Color bg)
     {
-        // Limpiar capas existentes
-        foreach (var layer in _layers)
-        {
-            layer.Dispose();
-        }
-        _layers.Clear();
-        
         CreateLayer("Fondo", bg);
     }
 
@@ -32,15 +33,15 @@ public partial class LayerManager : Node2D
     {
         var layer = new Layer();
         layer.LayerName = name;
-        
         int w = _layers.Count > 0 ? _layers[0].Width : 1920;
         int h = _layers.Count > 0 ? _layers[0].Height : 1080;
         
         layer.Initialize(w, h, fillColor ?? Colors.Transparent);
         
-        _layers.Insert(0, layer); // Nueva capa arriba
+        _layers.Insert(0, layer);
         if (_activeLayer == null) _activeLayer = layer;
 
+        RebuildRenderTree();
         LayerListChanged.Emit();
         ActiveLayerChanged.Emit(_activeLayer);
         return layer;
@@ -48,7 +49,7 @@ public partial class LayerManager : Node2D
 
     public void RemoveLayer(Layer layer)
     {
-        if (_layers.Count <= 1) return; // No borrar la última
+        if (_layers.Count <= 1) return;
         
         int idx = _layers.IndexOf(layer);
         _layers.Remove(layer);
@@ -59,6 +60,7 @@ public partial class LayerManager : Node2D
             ActiveLayerChanged.Emit(_activeLayer);
         }
         
+        RebuildRenderTree();
         LayerListChanged.Emit();
     }
 
@@ -71,45 +73,38 @@ public partial class LayerManager : Node2D
         }
     }
 
-    public void MoveLayerUp(int index)
+    public void MoveLayer(int index, int newIndex)
     {
-        if (index <= 0 || index >= _layers.Count) return;
+        if (index < 0 || index >= _layers.Count || newIndex < 0 || newIndex >= _layers.Count) return;
         var layer = _layers[index];
         _layers.RemoveAt(index);
-        _layers.Insert(index - 1, layer);
+        _layers.Insert(newIndex, layer);
+        RebuildRenderTree();
         LayerListChanged.Emit();
     }
 
-    public void MoveLayerDown(int index)
+    public void DuplicateLayer()
     {
-        if (index < 0 || index >= _layers.Count - 1) return;
-        var layer = _layers[index];
-        _layers.RemoveAt(index);
-        _layers.Insert(index + 1, layer);
-        LayerListChanged.Emit();
-    }
-
-    public void DuplicateLayer(Layer layer)
-    {
-        int idx = _layers.IndexOf(layer);
-        if (idx == -1) return;
+        if (_activeLayer == null) return;
         
+        int idx = _layers.IndexOf(_activeLayer);
         var newLayer = new Layer();
-        newLayer.LayerName = $"{layer.LayerName} copia";
-        newLayer.Initialize(layer.Width, layer.Height, Colors.Transparent);
+        newLayer.LayerName = $"{_activeLayer.LayerName} copia";
+        newLayer.Initialize(_activeLayer.Width, _activeLayer.Height, Colors.Transparent);
         
-        // Copiar píxeles
-        for (int y = 0; y < layer.Height; y++)
+        // Copiar pixels
+        for (int y = 0; y < _activeLayer.Height; y++)
         {
-            for (int x = 0; x < layer.Width; x++)
+            for (int x = 0; x < _activeLayer.Width; x++)
             {
-                newLayer.ImageData.SetPixel(x, y, layer.GetPixel(new Vector2(x, y)));
+                newLayer.ImageData.SetPixel(x, y, _activeLayer.ImageData.GetPixel(x, y));
             }
         }
         newLayer.UpdateTexture();
         
         _layers.Insert(idx + 1, newLayer);
         _activeLayer = newLayer;
+        RebuildRenderTree();
         LayerListChanged.Emit();
         ActiveLayerChanged.Emit(_activeLayer);
     }
@@ -122,22 +117,19 @@ public partial class LayerManager : Node2D
         var top = _activeLayer;
         var bottom = _layers[idx - 1];
 
-        var imgTop = top.ImageData;
-        var imgBottom = bottom.ImageData;
-
-        for (int y = 0; y < imgTop.GetHeight(); y++)
+        for (int y = 0; y < top.Height; y++)
         {
-            for (int x = 0; x < imgTop.GetWidth(); x++)
+            for (int x = 0; x < top.Width; x++)
             {
-                var cTop = imgTop.GetPixel(x, y);
-                if (cTop.A > 0.001f)
+                var cTop = top.ImageData.GetPixel(x, y);
+                if (cTop.A > 0)
                 {
-                    var cBot = imgBottom.GetPixel(x, y);
+                    var cBot = bottom.ImageData.GetPixel(x, y);
                     float a = cTop.A + cBot.A * (1 - cTop.A);
                     if (a > 0)
                     {
                         Vector3 rgb = (cTop.Rgb * cTop.A + cBot.Rgb * cBot.A * (1 - cTop.A)) / a;
-                        imgBottom.SetPixel(x, y, new Color(rgb.X, rgb.Y, rgb.Z, a));
+                        bottom.ImageData.SetPixel(x, y, new Color(rgb.X, rgb.Y, rgb.Z, a));
                     }
                 }
             }
@@ -151,30 +143,27 @@ public partial class LayerManager : Node2D
     {
         if (_layers.Count == 1) return;
         
-        var first = _layers.Last();
-        var finalImg = Image.Create(first.Width, first.Height, false, Image.Format.Rgba8);
+        var finalImg = Image.Create(_layers[0].Width, _layers[0].Height, false, Image.Format.Rgba8);
         finalImg.Fill(Colors.Transparent);
 
-        // Componer de abajo hacia arriba
         for (int i = _layers.Count - 1; i >= 0; i--)
         {
             var l = _layers[i];
             if (!l.IsVisible) continue;
             
             var src = l.ImageData;
-            for (int y = 0; y < src.GetHeight(); y++)
+            for(int y=0; y<src.GetHeight(); y++)
             {
-                for (int x = 0; x < src.GetWidth(); x++)
+                for(int x=0; x<src.GetWidth(); x++)
                 {
-                    var cSrc = src.GetPixel(x, y);
-                    if (cSrc.A > 0.001f)
+                    var cSrc = src.GetPixel(x,y);
+                    if(cSrc.A > 0)
                     {
-                        var cDst = finalImg.GetPixel(x, y);
+                        var cDst = finalImg.GetPixel(x,y);
                         float a = cSrc.A + cDst.A * (1 - cSrc.A);
-                        if (a > 0)
-                        {
+                        if(a>0){
                             Vector3 rgb = (cSrc.Rgb * cSrc.A + cDst.Rgb * cDst.A * (1 - cSrc.A)) / a;
-                            finalImg.SetPixel(x, y, new Color(rgb.X, rgb.Y, rgb.Z, a));
+                            finalImg.SetPixel(x,y, new Color(rgb.X, rgb.Y, rgb.Z, a));
                         }
                     }
                 }
@@ -184,16 +173,68 @@ public partial class LayerManager : Node2D
         _layers.Clear();
         var flatLayer = new Layer();
         flatLayer.LayerName = "Capa Aplanada";
-        flatLayer.Initialize(first.Width, first.Height, Colors.Transparent);
+        flatLayer.Initialize(finalImg.GetWidth(), finalImg.GetHeight(), Colors.Transparent);
         
-        for (int y = 0; y < finalImg.GetHeight(); y++)
-            for (int x = 0; x < finalImg.GetWidth(); x++)
-                flatLayer.ImageData.SetPixel(x, y, finalImg.GetPixel(x, y));
+        for(int y=0; y<finalImg.GetHeight(); y++)
+            for(int x=0; x<finalImg.GetWidth(); x++)
+                flatLayer.ImageData.SetPixel(x,y, finalImg.GetPixel(x,y));
         
         flatLayer.UpdateTexture();
         _layers.Add(flatLayer);
         _activeLayer = flatLayer;
+        RebuildRenderTree();
         LayerListChanged.Emit();
+    }
+
+    public Image GetCompositedImage()
+    {
+        if (_layers.Count == 0) return null;
+        
+        var finalImg = Image.Create(_layers[0].Width, _layers[0].Height, false, Image.Format.Rgba8);
+        finalImg.Fill(Colors.Transparent);
+
+        for (int i = _layers.Count - 1; i >= 0; i--)
+        {
+            var l = _layers[i];
+            if (!l.IsVisible) continue;
+            
+            var src = l.ImageData;
+            for(int y=0; y<src.GetHeight(); y++)
+            {
+                for(int x=0; x<src.GetWidth(); x++)
+                {
+                    var cSrc = src.GetPixel(x,y);
+                    if(cSrc.A > 0)
+                    {
+                        var cDst = finalImg.GetPixel(x,y);
+                        float a = cSrc.A + cDst.A * (1 - cSrc.A);
+                        if(a>0){
+                            Vector3 rgb = (cSrc.Rgb * cSrc.A + cDst.Rgb * cDst.A * (1 - cSrc.A)) / a;
+                            finalImg.SetPixel(x,y, new Color(rgb.X, rgb.Y, rgb.Z, a));
+                        }
+                    }
+                }
+            }
+        }
+        
+        return finalImg;
+    }
+
+    private void RebuildRenderTree()
+    {
+        foreach (var child in _renderContainer.GetChildren())
+        {
+            child.QueueFree();
+        }
+
+        for (int i = _layers.Count - 1; i >= 0; i--)
+        {
+            var layer = _layers[i];
+            var sprite = new Sprite2D();
+            sprite.Texture = layer.Texture;
+            sprite.Modulate = new Color(1, 1, 1, layer.Opacity);
+            _renderContainer.AddChild(sprite);
+        }
     }
     
     public void NotifyLayerUpdated(Layer layer)

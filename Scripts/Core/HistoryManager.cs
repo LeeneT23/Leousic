@@ -33,7 +33,6 @@ public partial class HistoryManager : Node
             _undoStack.Pop();
         
         _redoStack.Clear();
-        GD.Print($"Historial: {actionName} (Undo: {_undoStack.Count})");
     }
 
     public void Undo()
@@ -42,7 +41,6 @@ public partial class HistoryManager : Node
 
         var state = _undoStack.Pop();
         
-        // Guardar estado actual para redo
         var currentLayer = _layerManager.Layers[state.LayerIndex];
         var currentState = new HistoryState
         {
@@ -52,9 +50,8 @@ public partial class HistoryManager : Node
         };
         _redoStack.Push(currentState);
 
-        // Restaurar
         currentLayer.RestoreSnapshot(state.Snapshot);
-        GD.Print("Deshacer acción");
+        _layerManager.NotifyLayerUpdated(currentLayer);
     }
 
     public void Redo()
@@ -63,7 +60,6 @@ public partial class HistoryManager : Node
 
         var state = _redoStack.Pop();
         
-        // Guardar para undo
         var currentLayer = _layerManager.Layers[state.LayerIndex];
         var currentState = new HistoryState
         {
@@ -74,7 +70,7 @@ public partial class HistoryManager : Node
         _undoStack.Push(currentState);
 
         currentLayer.RestoreSnapshot(state.Snapshot);
-        GD.Print("Rehacer acción");
+        _layerManager.NotifyLayerUpdated(currentLayer);
     }
 
     public void Clear()
