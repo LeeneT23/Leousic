@@ -1,48 +1,37 @@
 using Godot;
 
-/// <summary>
-/// Herramienta de selector de color (cuentagotas).
-/// Permite tomar colores directamente del canvas.
-/// </summary>
-public partial class ColorPickerTool : BaseTool
+namespace PhotoGodot.Tools;
+
+public partial class ColorPickerTool : Core.BaseTool
 {
-    public ColorPickerTool()
+    public override string Name => "ColorPicker";
+    public override string Description => "Pick color from canvas (Eyedropper)";
+
+    protected override void OnLeftMouseDown(Vector2 position)
     {
-        ToolName = "Selector de Color";
-        ToolDescription = "Toma un color del canvas (cuentagotas)";
+        PickColor(position);
     }
-    
-    protected override void OnDrawStart(Vector2 position)
+
+    private void PickColor(Vector2 position)
     {
-        SampleColor(position);
-    }
-    
-    private void SampleColor(Vector2 position)
-    {
-        if (Canvas == null)
-            return;
+        if (LayerManager == null || LayerManager.ActiveLayer == null) return;
         
-        // Obtener el color del pixel en la posición
-        var layers = Canvas.GetLayer(0);
-        if (layers != null && layers.Texture != null)
+        var layerPos = ScreenToLayer(position);
+        int x = (int)layerPos.X;
+        int y = (int)layerPos.Y;
+        
+        var layer = LayerManager.ActiveLayer;
+        if (x >= 0 && x < layer.Width && y >= 0 && y < layer.Height)
         {
-            Image img = layers.Texture.GetImage();
-            int x = (int)position.X;
-            int y = (int)position.Y;
+            var color = layer.Image.GetPixel(x, y);
             
-            if (x >= 0 && x < img.GetSize().X && y >= 0 && y < img.GetSize().Y)
+            // Set as primary color
+            if (ToolManager != null)
             {
-                Color sampledColor = img.GetPixel(x, y);
-                PrimaryColor = sampledColor;
-                
-                GD.Print($"[ColorPicker] Color seleccionado: {sampledColor.ToHtml()}");
-                
-                // Notificar a la UI si existe
-                if (UI != null)
-                {
-                    UI.OnColorPicked(sampledColor);
-                }
+                ToolManager.SetPrimaryColor(color);
             }
+            
+            GD.Print($"[ColorPicker] Picked: {color.ToHtml()}");
         }
     }
 }

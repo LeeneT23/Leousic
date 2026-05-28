@@ -1,148 +1,147 @@
 using Godot;
 using System;
-using System.Collections.Generic;
 
-/// <summary>
-/// Clase base para todas las herramientas de PhotoGodot Pro.
-/// Extiende esta clase para crear tus propias herramientas personalizadas.
-/// </summary>
-public abstract class BaseTool : Node
+namespace PhotoGodot.Core;
+
+public abstract partial class BaseTool : RefCounted
 {
-    [Signal] public delegate void ToolActivatedEventHandler();
-    [Signal] public delegate void ToolDeactivatedEventHandler();
-    
-    public string ToolName { get; protected set; } = "Base Tool";
-    public string ToolDescription { get; protected set; } = "Herramienta base";
-    public Texture2D? ToolIcon { get; protected set; }
+    public string Name { get; protected set; } = "Base Tool";
+    public string Description { get; protected set; } = "Base tool description";
+    public bool IsActive { get; private set; }
     
     protected DrawingCanvas? Canvas { get; private set; }
-    protected MainUI? UI { get; private set; }
+    protected LayerManager? LayerManager { get; private set; }
+    protected HistoryManager? HistoryManager { get; private set; }
     
-    // Propiedades configurables de la herramienta
-    public float BrushSize { get; set; } = 10.0f;
-    public float BrushHardness { get; set; } = 1.0f;
-    public float Opacity { get; set; } = 1.0f;
+    // Tool properties
     public Color PrimaryColor { get; set; } = Colors.Black;
     public Color SecondaryColor { get; set; } = Colors.White;
+    public float BrushSize { get; set; } = 10f;
+    public float Opacity { get; set; } = 1.0f;
+    public float Hardness { get; set; } = 1.0f;
     
-    // Estado de la herramienta
-    protected bool IsDrawing { get; set; } = false;
-    protected Vector2 LastPosition { get; set; } = Vector2.Zero;
-    
-    public virtual void Initialize(DrawingCanvas canvas, MainUI ui)
+    // State
+    protected Vector2 LastPosition { get; private set; }
+    protected bool IsDrawing { get; private set; }
+    protected Layer? WorkingLayer => LayerManager?.ActiveLayer;
+
+    public virtual void Initialize(DrawingCanvas canvas, LayerManager layerManager, HistoryManager historyManager)
     {
         Canvas = canvas;
-        UI = ui;
+        LayerManager = layerManager;
+        HistoryManager = historyManager;
     }
-    
-    /// <summary>
-    /// Se llama cuando la herramienta es activada
-    /// </summary>
-    public virtual void OnActivate()
+
+    public virtual void Activate()
     {
-        EmitSignal(SignalName.ToolActivated);
-        GD.Print($"[Tool] {ToolName} activada");
+        IsActive = true;
+        OnActivate();
+        GD.Print($"[Tool] Activated: {Name}");
     }
-    
-    /// <summary>
-    /// Se llama cuando la herramienta es desactivada
-    /// </summary>
-    public virtual void OnDeactivate()
+
+    public virtual void Deactivate()
     {
+        IsActive = false;
         IsDrawing = false;
-        EmitSignal(SignalName.ToolDeactivated);
-        GD.Print($"[Tool] {ToolName} desactivada");
+        OnDeactivate();
+        GD.Print($"[Tool] Deactivated: {Name}");
     }
-    
-    /// <summary>
-    /// Maneja el evento de presión del botón del mouse
-    /// </summary>
-    public virtual void OnInputPressed(Vector2 position, int buttonIndex, bool shiftPressed, bool ctrlPressed, bool altPressed)
+
+    public virtual void OnMouseDown(Vector2 position, MouseButton button)
     {
-        if (buttonIndex == MouseButton.Left)
+        if (WorkingLayer == null || !WorkingLayer.Visible) return;
+        
+        LastPosition = position;
+        IsDrawing = true;
+        
+        if (button == MouseButton.Left)
         {
-            IsDrawing = true;
-            LastPosition = position;
-            OnDrawStart(position);
+            OnLeftMouseDown(position);
         }
-        else if (buttonIndex == MouseButton.Right)
+        else if (button == MouseButton.Right)
         {
-            OnRightClick(position);
-        }
-    }
-    
-    /// <summary>
-    /// Maneja el evento de movimiento del mouse con botón presionado
-    /// </summary>
-    public virtual void OnInputDragged(Vector2 position, Vector2 delta, int buttonMask)
-    {
-        if (IsDrawing && (buttonMask & MouseButtonMask.Left) != 0)
-        {
-            OnDraw(LastPosition, position, delta);
-            LastPosition = position;
+            OnRightMouseDown(position);
         }
     }
-    
-    /// <summary>
-    /// Maneja el evento de liberación del botón del mouse
-    /// </summary>
-    public virtual void OnInputReleased(Vector2 position, int buttonIndex)
+
+    public virtual void OnMouseDrag(Vector2 from, Vector2 to, Vector2 delta)
     {
-        if (buttonIndex == MouseButton.Left && IsDrawing)
+        if (!IsDrawing || WorkingLayer == null || !WorkingLayer.Visible) return;
+        
+        OnDraw(from, to, delta);
+        LastPosition = to;
+        
+        Canvas?.QueueRedraw();
+    }
+
+    public virtual void OnMouseUp(Vector2 position, MouseButton button)
+    {
+        if (!IsDrawing) return;
+        
+        IsDrawing = false;
+        
+        if (button == MouseButton.Left)
         {
-            OnDrawEnd(position);
-            IsDrawing = false;
+            OnLeftMouseUp(position);
+        }
+        else if (button == MouseButton.Right)
+        {
+            OnRightMouseUp(position);
         }
     }
-    
-    /// <summary>
-    /// Se llama al iniciar un trazo
-    /// </summary>
-    protected virtual void OnDrawStart(Vector2 position) { }
-    
-    /// <summary>
-    /// Se llama durante el trazo (para dibujar continuamente)
-    /// </summary>
-    protected virtual void OnDraw(Vector2 from, Vector2 to, Vector2 delta) { }
-    
-    /// <summary>
-    /// Se llama al finalizar un trazo
-    /// </summary>
-    protected virtual void OnDrawEnd(Vector2 position) { }
-    
-    /// <summary>
-    /// Se llama al hacer clic derecho
-    /// </summary>
-    protected virtual void OnRightClick(Vector2 position) { }
-    
-    /// <summary>
-    /// Se llama al procesar input general (teclado, etc.)
-    /// </summary>
-    public virtual void ProcessInput(InputEvent @event) { }
-    
-    /// <summary>
-    /// Obtiene los ajustes personalizados para esta herramienta
-    /// </summary>
-    public virtual Dictionary<string, Variant> GetToolSettings()
+
+    public virtual void OnMouseMove(Vector2 position)
     {
-        return new Dictionary<string, Variant>
-        {
-            { "BrushSize", BrushSize },
-            { "BrushHardness", BrushHardness },
-            { "Opacity", Opacity }
-        };
+        // Override for cursor updates
     }
-    
-    /// <summary>
-    /// Aplica los ajustes desde la UI
-    /// </summary>
-    public virtual void ApplyToolSettings(Dictionary<string, Variant> settings)
+
+    public virtual void OnKeyDown(Keycode keycode)
     {
-        if (settings.TryGetValue("BrushSize", out var size))
-            BrushSize = size.AsSingle();
-        if (settings.TryGetValue("BrushHardness", out var hardness))
-            BrushHardness = hardness.AsSingle();
-        if (settings.TryGetValue("Opacity", out var opacity))
-            Opacity = opacity.AsSingle();
+        // Override for keyboard shortcuts
+    }
+
+    public virtual void UpdateProperties(float size, float opacity, float hardness, Color color)
+    {
+        BrushSize = size;
+        Opacity = opacity;
+        Hardness = hardness;
+        PrimaryColor = color;
+    }
+
+    protected virtual void OnActivate() { }
+    protected virtual void OnDeactivate() { }
+    protected virtual void OnLeftMouseDown(Vector2 position) { }
+    protected virtual void OnRightMouseDown(Vector2 position) { }
+    protected virtual void OnLeftMouseUp(Vector2 position) { }
+    protected virtual void OnRightMouseUp(Vector2 position) { }
+    protected abstract void OnDraw(Vector2 from, Vector2 to, Vector2 delta);
+
+    protected void SaveState(string actionName, string? description = null)
+    {
+        if (HistoryManager != null && WorkingLayer != null)
+        {
+            HistoryManager.PushAction(actionName, WorkingLayer, LayerManager!.ActiveLayerIndex, description);
+        }
+    }
+
+    protected int ScreenToLayerX(float screenX)
+    {
+        if (Canvas == null) return (int)screenX;
+        return (int)((screenX - Canvas.OffsetX) / Canvas.Zoom);
+    }
+
+    protected int ScreenToLayerY(float screenY)
+    {
+        if (Canvas == null) return (int)screenY;
+        return (int)((screenY - Canvas.OffsetY) / Canvas.Zoom);
+    }
+
+    protected Vector2 ScreenToLayer(Vector2 screenPos)
+    {
+        if (Canvas == null) return screenPos;
+        return new Vector2(
+            (screenPos.X - Canvas.OffsetX) / Canvas.Zoom,
+            (screenPos.Y - Canvas.OffsetY) / Canvas.Zoom
+        );
     }
 }
