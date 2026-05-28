@@ -1,292 +1,182 @@
 using Godot;
+using System;
+using PhotoGodot.Core;
+using PhotoGodot.Tools;
+using PhotoGodot.UI;
 
 public partial class Main : Node2D
 {
-    [Export] public int CanvasWidth { get; set; } = 1920;
-    [Export] public int CanvasHeight { get; set; } = 1080;
-    
-    private DrawingCanvas _drawingCanvas;
+    // Core Managers
     private LayerManager _layerManager;
-    private ToolManager _toolManager;
     private HistoryManager _historyManager;
+    private ToolManager _toolManager;
+    
+    // UI Components
     private MainUI _mainUI;
     
-    private Color _primaryColor = Colors.Black;
+    // Canvas de dibujo (Viewport para capturar input y dibujar)
+    private ColorRect _canvasContainer;
+    private Vector2 _canvasSize = new(1920, 1080);
+    private Vector2 _canvasOffset = Vector2.Zero;
+    private float _zoom = 1.0f;
+    
+    // Estado
+    private Color _currentColor = Colors.Black;
     private float _brushSize = 10.0f;
-    private float _opacity = 1.0f;
-    private float _hardness = 1.0f;
+    private float _brushHardness = 1.0f;
+    private float _brushOpacity = 1.0f;
+    private bool _showGrid = false;
     
-    public Color PrimaryColor 
-    { 
-        get => _primaryColor; 
-        set 
-        { 
-            _primaryColor = value; 
-            if (_mainUI != null) _mainUI.UpdateColorPreview(value);
-        } 
-    }
-    
-    public float BrushSize 
-    { 
-        get => _brushSize; 
-        set => _brushSize = Mathf.Clamp(value, 1, 500); 
-    }
-    
-    public float Opacity 
-    { 
-        get => _opacity; 
-        set => _opacity = Mathf.Clamp(value, 0.01f, 1.0f); 
-    }
-    
-    public float Hardness 
-    { 
-        get => _hardness; 
-        set => _hardness = Mathf.Clamp(value, 0.0f, 1.0f); 
-    }
-    
+    public LayerManager LayerManager => _layerManager;
+    public ToolManager ToolManager => _toolManager;
+    public HistoryManager HistoryManager => _historyManager;
+    public Color CurrentColor { get => _currentColor; set => _currentColor = value; }
+    public float BrushSize { get => _brushSize; set => _brushSize = value; }
+    public float BrushHardness { get => _brushHardness; set => _brushHardness = value; }
+    public float BrushOpacity { get => _brushOpacity; set => _brushOpacity = value; }
+    public Vector2 CanvasOffset { get => _canvasOffset; set => _canvasOffset = value; }
+    public float Zoom { get => _zoom; set => _zoom = value; }
+    public bool ShowGrid { get => _showGrid; set => _showGrid = value; }
+    public ColorRect CanvasContainer => _canvasContainer;
+
     public override void _Ready()
     {
-        InitializeCoreSystems();
-        SetupUI();
-        CreateDefaultLayer();
-        SetupInputActions();
+        GD.Print("Iniciando PhotoGodot Pro...");
         
-        GD.Print("🎨 PhotoGodot Pro initialized successfully!");
-        GD.Print($"Canvas: {CanvasWidth}x{CanvasHeight}");
-        GD.Print($"Layers: {_layerManager.LayerCount}");
-    }
-    
-    private void InitializeCoreSystems()
-    {
-        _historyManager = new HistoryManager(this, 500);
-        _layerManager = new LayerManager(this, CanvasWidth, CanvasHeight);
-        _drawingCanvas = new DrawingCanvas(this);
-        _toolManager = new ToolManager(this);
+        // Configurar ventana
+        var window = GetWindow();
+        window.Size = new Vector2I(1280, 720);
+        window.Title = "PhotoGodot Pro v2.0";
         
-        AddChild(_historyManager);
+        // Crear contenedor principal
+        var mainContainer = new VBoxContainer();
+        AddChild(mainContainer);
+        
+        // Inicializar Managers
+        _layerManager = new LayerManager();
         AddChild(_layerManager);
-        AddChild(_drawingCanvas);
+        
+        _historyManager = new HistoryManager();
+        AddChild(_historyManager);
+        _historyManager.Setup(_layerManager);
+        
+        _toolManager = new ToolManager();
         AddChild(_toolManager);
         
-        _toolManager.RegisterTool(new BrushTool(this));
-        _toolManager.RegisterTool(new EraserTool(this));
-        _toolManager.RegisterTool(new ColorPickerTool(this));
-        _toolManager.RegisterTool(new MoveTool(this));
-        _toolManager.RegisterTool(new SelectTool(this));
-    }
-    
-    private void SetupUI()
-    {
-        var uiScene = GD.Load<PackedScene>("res://Scenes/MainUI.tscn");
-        if (uiScene != null)
-        {
-            _mainUI = uiScene.Instantiate<MainUI>();
-            AddChild(_mainUI);
-            _mainUI.Initialize(this);
-        }
-        else
-        {
-            GD.PrintErr("Error: MainUI scene not found!");
-            CreateFallbackUI();
-        }
-    }
-    
-    private void CreateFallbackUI()
-    {
+        // Crear área de canvas (centro)
+        _canvasContainer = new ColorRect();
+        _canvasContainer.Color = new Color(0.15f, 0.15f, 0.15f); // Gris oscuro fondo
+        _canvasContainer.CustomMinimumSize = new Vector2(800, 600);
+        mainContainer.AddChild(_canvasContainer);
+        
+        // Crear UI completa
         _mainUI = new MainUI();
         AddChild(_mainUI);
-        _mainUI.Initialize(this);
-        GD.Print("Created fallback UI programmatically");
+        _mainUI.Setup(this);
+        
+        // Registrar herramientas
+        RegisterTools();
+        
+        // Configurar lienzo inicial
+        _layerManager.Setup((int)_canvasSize.X, (int)_canvasSize.Y, Colors.White);
+        
+        GD.Print("PhotoGodot Pro listo. Herramienta activa: " + _toolManager.CurrentTool?.ToolName);
     }
-    
-    private void CreateDefaultLayer()
+
+    private void RegisterTools()
     {
-        _layerManager.CreateLayer("Background");
-        _layerManager.SetActiveLayer(0);
+        var brush = new BrushTool();
+        var eraser = new EraserTool();
+        var picker = new ColorPickerTool();
+        var move = new MoveTool();
+        var select = new SelectTool();
+        
+        _toolManager.RegisterTool(brush);
+        _toolManager.RegisterTool(eraser);
+        _toolManager.RegisterTool(picker);
+        _toolManager.RegisterTool(move);
+        _toolManager.RegisterTool(select);
     }
-    
-    private void SetupInputActions()
-    {
-        // Input actions are defined in project.godot
-        GD.Print("Input actions configured");
-    }
-    
+
     public override void _Input(InputEvent @event)
     {
-        if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo)
+        base._Input(@event);
+        
+        // Manejar atajos globales
+        if (@event is InputEventKey key && key.Pressed)
         {
-            HandleKeyboardShortcuts(keyEvent);
+            HandleGlobalShortcuts(key);
         }
         
-        if (_toolManager.CurrentTool != null)
+        // Pasar input al tool manager si es sobre el canvas
+        if (_canvasContainer.GetGlobalRect().HasPoint(GetGlobalMousePosition()))
         {
-            _toolManager.CurrentTool.HandleInput(@event);
+            _toolManager.HandleInput(@event);
         }
     }
-    
-    private void HandleKeyboardShortcuts(InputEventKey keyEvent)
+
+    private void HandleGlobalShortcuts(InputEventKey key)
     {
-        if (keyEvent.CtrlPressed)
+        string keyCode = key.Keycode.ToString().ToLower();
+        
+        // Herramientas
+        if (key.Keycode == Key.B) _toolManager.SetTool("Brush");
+        else if (key.Keycode == Key.E) _toolManager.SetTool("Eraser");
+        else if (key.Keycode == Key.I) _toolManager.SetTool("ColorPicker");
+        else if (key.Keycode == Key.V) _toolManager.SetTool("Move");
+        else if (key.Keycode == Key.M) _toolManager.SetTool("Select");
+        else if (key.Keycode == Key.G) _showGrid = !_showGrid;
+        
+        // Undo/Redo
+        if (key.CtrlPressed && key.Keycode == Key.Z)
         {
-            switch (keyEvent.Keycode)
-            {
-                case Key.Z:
-                    _historyManager.Undo();
-                    break;
-                case Key.Y:
-                    _historyManager.Redo();
-                    break;
-                case Key.N:
-                    CreateNewDocument();
-                    break;
-                case Key.S:
-                    SaveProject();
-                    break;
-                case Key.O:
-                    OpenProject();
-                    break;
-            }
+            if (key.ShiftPressed) _historyManager.Redo();
+            else _historyManager.Undo();
         }
-        else
-        {
-            switch (keyEvent.Keycode)
-            {
-                case Key.B:
-                    _toolManager.SetActiveTool("Brush");
-                    break;
-                case Key.E:
-                    _toolManager.SetActiveTool("Eraser");
-                    break;
-                case Key.I:
-                    _toolManager.SetActiveTool("ColorPicker");
-                    break;
-                case Key.V:
-                    _toolManager.SetActiveTool("Move");
-                    break;
-                case Key.M:
-                    _toolManager.SetActiveTool("Select");
-                    break;
-                case Key.G:
-                    ToggleGrid();
-                    break;
-                case Key.Delete:
-                    DeleteCurrentLayer();
-                    break;
-            }
-        }
+        
+        // Acciones
+        if (key.CtrlPressed && key.Keycode == Key.N) NewProject();
+        if (key.CtrlPressed && key.Keycode == Key.S) SaveProject();
+        if (key.CtrlPressed && key.Keycode == Key.E) ExportImage();
     }
-    
-    public void CreateNewDocument()
+
+    public void NewProject()
     {
-        _layerManager.ClearAllLayers();
         _historyManager.Clear();
-        CreateDefaultLayer();
-        GD.Print("New document created");
+        _layerManager.Setup((int)_canvasSize.X, (int)_canvasSize.Y, Colors.White);
+        GD.Print("Nuevo proyecto creado");
     }
-    
-    public async void SaveProject()
+
+    public void SaveProject()
     {
-        var dialog = new FileDialog
-        {
-            Title = "Save Project",
-            FileMode = FileDialog.FileModeEnum.SaveFile,
-            Filters = new string[] { "*.png ; PNG Image", "*.jpg ; JPG Image" }
-        };
-        
-        AddChild(dialog);
-        dialog.PopupCentered();
-        
-        await ToSignal(dialog, "file_selected");
-        
-        string path = dialog.FilePath;
-        dialog.QueueFree();
-        
-        if (path.EndsWith(".png"))
-        {
-            _layerManager.ExportToPNG(path);
-            GD.Print($"Project saved to: {path}");
-        }
+        // Guardar configuración básica (en una versión completa se guardaría todo el estado)
+        GD.Print("Proyecto guardado (simulado)");
     }
-    
-    public async void OpenProject()
+
+    public void ExportImage()
     {
-        var dialog = new FileDialog
-        {
-            Title = "Open Image",
-            FileMode = FileDialog.FileModeEnum.OpenFile,
-            Filters = new string[] { "*.png, *.jpg, *.jpeg ; Image Files" }
-        };
+        if (_layerManager.ActiveLayer == null) return;
         
-        AddChild(dialog);
-        dialog.PopupCentered();
+        var image = _layerManager.ActiveLayer.ImageData.Duplicate();
+        string path = $"user://export_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+        Error err = image.SavePng(path);
         
-        await ToSignal(dialog, "file_selected");
-        
-        string path = dialog.FilePath;
-        dialog.QueueFree();
-        
-        LoadImage(path);
-    }
-    
-    public void LoadImage(string path)
-    {
-        if (!ResourceLoader.Exists(path))
-        {
-            GD.PrintErr($"File not found: {path}");
-            return;
-        }
-        
-        var image = new Image();
-        var error = image.Load(path);
-        
-        if (error == Error.Ok)
-        {
-            _layerManager.ClearAllLayers();
-            _layerManager.CreateLayerFromImage(image, "Imported Layer");
-            _layerManager.SetActiveLayer(0);
-            GD.Print($"Image loaded: {path} ({image.GetWidth()}x{image.GetHeight()})");
-        }
+        if (err == Error.Ok)
+            GD.Print($"Imagen exportada a: {path}");
         else
-        {
-            GD.PrintErr($"Failed to load image: {error}");
-        }
+            GD.PrintErr("Error al exportar imagen");
     }
     
-    public void ToggleGrid()
+    public Vector2 ScreenToCanvas(Vector2 screenPos)
     {
-        if (_drawingCanvas != null)
-        {
-            _drawingCanvas.ToggleGrid();
-        }
+        var rect = _canvasContainer.GetGlobalRect();
+        var localPos = screenPos - rect.Position - _canvasOffset;
+        return localPos / _zoom;
     }
     
-    public void DeleteCurrentLayer()
+    public void UpdateCanvasTransform()
     {
-        if (_layerManager.ActiveLayerIndex >= 0)
-        {
-            _layerManager.DeleteLayer(_layerManager.ActiveLayerIndex);
-        }
+        // Notificar a la UI o componentes que necesitan redibujar
+        _mainUI?.RefreshLayerPanel();
     }
-    
-    #region Public API for Tools and UI
-    
-    public DrawingCanvas GetDrawingCanvas() => _drawingCanvas;
-    public LayerManager GetLayerManager() => _layerManager;
-    public ToolManager GetToolManager() => _toolManager;
-    public HistoryManager GetHistoryManager() => _historyManager;
-    public MainUI GetMainUI() => _mainUI;
-    
-    public void SetPrimaryColor(Color color) => PrimaryColor = color;
-    public Color GetPrimaryColor() => _primaryColor;
-    
-    public void SetBrushSize(float size) => BrushSize = size;
-    public float GetBrushSize() => _brushSize;
-    
-    public void SetOpacity(float opacity) => Opacity = opacity;
-    public float GetOpacity() => _opacity;
-    
-    public void SetHardness(float hardness) => Hardness = hardness;
-    public float GetHardness() => _hardness;
-    
-    #endregion
 }

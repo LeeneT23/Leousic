@@ -1,56 +1,52 @@
 using Godot;
 
-public abstract partial class BaseTool : Node
+namespace PhotoGodot.Core;
+
+public abstract partial class BaseTool : Resource
 {
-    protected Main _main;
-    protected string _toolName;
-    protected bool _isDrawing = false;
-    protected Vector2 _lastPosition;
+    [Export] public string ToolName { get; set; } = "Herramienta";
     
-    public string ToolName => _toolName;
-    public bool IsDrawing => _isDrawing;
-    
-    public virtual void Initialize(Main main)
+    protected Main MainScene { get; private set; } = null!;
+    protected LayerManager LayerManager { get; private set; } = null!;
+    protected HistoryManager History { get; private set; } = null!;
+
+    protected bool IsDrawing { get; set; } = false;
+    protected Vector2 LastPos { get; set; } = Vector2.Zero;
+
+    public virtual void Initialize(Main main, LayerManager lm, HistoryManager hist)
     {
-        _main = main;
+        MainScene = main;
+        LayerManager = lm;
+        History = hist;
     }
-    
-    public virtual void HandleInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mouseButton)
-        {
-            if (mouseButton.ButtonIndex == MouseButton.Left)
-            {
-                if (mouseButton.Pressed)
-                {
-                    _isDrawing = true;
-                    _lastPosition = GetCanvasPosition(mouseButton.Position);
-                    OnPressStart(_lastPosition);
-                }
-                else
-                {
-                    OnPressEnd(_lastPosition);
-                    _isDrawing = false;
-                }
-            }
-        }
-        else if (@event is InputEventMouseMotion mouseMotion && _isDrawing)
-        {
-            Vector2 currentPosition = GetCanvasPosition(mouseMotion.Position);
-            OnDraw(_lastPosition, currentPosition, currentPosition - _lastPosition);
-            _lastPosition = currentPosition;
-        }
-    }
-    
-    protected virtual Vector2 GetCanvasPosition(Vector2 screenPosition)
-    {
-        return screenPosition;
-    }
-    
-    protected abstract void OnPressStart(Vector2 position);
-    protected abstract void OnDraw(Vector2 from, Vector2 to, Vector2 delta);
-    protected abstract void OnPressEnd(Vector2 position);
-    
+
     public virtual void OnActivate() { }
     public virtual void OnDeactivate() { }
+
+    public virtual void OnInput(InputEvent e) { }
+
+    public virtual void OnBeginDraw(Vector2 pos)
+    {
+        IsDrawing = true;
+        LastPos = pos;
+        History.SaveState($"{ToolName} Inicio");
+    }
+
+    public virtual void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
+    {
+        // Implementar en subclases
+    }
+
+    public virtual void OnEndDraw(Vector2 pos)
+    {
+        IsDrawing = false;
+    }
+    
+    protected void CommitChanges()
+    {
+        if (LayerManager.ActiveLayer != null)
+        {
+            LayerManager.NotifyLayerUpdated(LayerManager.ActiveLayer);
+        }
+    }
 }

@@ -1,60 +1,47 @@
 using Godot;
 
-public partial class MoveTool : BaseTool
+namespace PhotoGodot.Tools;
+
+public partial class MoveTool : Core.BaseTool
 {
-    private Vector2 _startPosition;
-    private bool _isMoving = false;
-    
     public MoveTool()
     {
-        _toolName = "Move";
+        ToolName = "Move";
     }
-    
-    protected override void OnPressStart(Vector2 position)
+
+    private Vector2 _dragStartPos = Vector2.Zero;
+    private Image _dragSnapshot = null;
+
+    public override void OnInput(InputEvent e)
     {
-        _startPosition = position;
-        _isMoving = true;
-    }
-    
-    protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
-    {
-        if (!_isMoving) return;
-        
-        // For now, move tool shows feedback but doesn't actually move pixels
-        // A full implementation would require tracking layer offsets
-        GD.Print($"Moving: {delta}");
-    }
-    
-    protected override void OnPressEnd(Vector2 position)
-    {
-        _isMoving = false;
-    }
-    
-    public override void HandleInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mouseButton)
+        if (e is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
         {
-            if (mouseButton.ButtonIndex == MouseButton.Left)
+            var canvasPos = MainScene.ScreenToCanvas(mb.GlobalPosition);
+            
+            if (mb.Pressed)
             {
-                if (mouseButton.Pressed)
+                if (LayerManager.ActiveLayer != null)
                 {
-                    _startPosition = mouseButton.Position;
-                    _isMoving = true;
-                    OnPressStart(_startPosition);
-                }
-                else
-                {
-                    OnPressEnd(mouseButton.Position);
-                    _isMoving = false;
+                    _dragStartPos = canvasPos;
+                    _dragSnapshot = LayerManager.ActiveLayer.GetSnapshot();
+                    IsDrawing = true;
                 }
             }
+            else if (IsDrawing)
+            {
+                IsDrawing = false;
+                _dragSnapshot = null;
+                History.SaveState("Mover completado");
+            }
         }
-        else if (@event is InputEventMouseMotion mouseMotion && _isMoving)
+        else if (e is InputEventMouseMotion mm && IsDrawing)
         {
-            Vector2 currentPosition = mouseMotion.Position;
-            Vector2 delta = currentPosition - _startPosition;
-            OnDraw(_startPosition, currentPosition, delta);
-            _startPosition = currentPosition;
+            var canvasPos = MainScene.ScreenToCanvas(mm.GlobalPosition);
+            Vector2 delta = canvasPos - _dragStartPos;
+            
+            // En una implementación completa, esto movería el contenido de la capa
+            // Por ahora, solo mostramos feedback visual
+            GD.Print($"Moviendo: {delta}");
         }
     }
 }
