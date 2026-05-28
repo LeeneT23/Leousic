@@ -1,47 +1,43 @@
 using Godot;
+using PhotoGodot.Core;
 
 namespace PhotoGodot.Tools;
 
-public partial class MoveTool : Core.BaseTool
+public partial class MoveTool : BaseTool
 {
-    public MoveTool()
-    {
-        ToolName = "Move";
-    }
+    private bool _isMoving = false;
+    private Vector2 _startPos;
 
-    private Vector2 _dragStartPos = Vector2.Zero;
-    private Image _dragSnapshot = null;
+    public override void OnActivate()
+    {
+        GD.Print("✋ Herramienta Mover activada");
+    }
 
     public override void OnInput(InputEvent e)
     {
-        if (e is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+        if (e is InputEventMouseButton mb)
         {
-            var canvasPos = MainScene.ScreenToCanvas(mb.GlobalPosition);
+            Vector2 pos = MainScene.GetCanvasPosition(mb.Position);
             
-            if (mb.Pressed)
+            if (mb.ButtonIndex == MouseButton.Left && mb.Pressed)
             {
-                if (LayerManager.ActiveLayer != null)
-                {
-                    _dragStartPos = canvasPos;
-                    _dragSnapshot = LayerManager.ActiveLayer.GetSnapshot();
-                    IsDrawing = true;
-                }
+                _isMoving = true;
+                _startPos = pos;
+                History.SaveState("Mover");
             }
-            else if (IsDrawing)
+            else if (mb.ButtonIndex == MouseButton.Left && !mb.Pressed)
             {
-                IsDrawing = false;
-                _dragSnapshot = null;
-                History.SaveState("Mover completado");
+                _isMoving = false;
             }
         }
-        else if (e is InputEventMouseMotion mm && IsDrawing)
+        else if (e is InputEventMouseMotion mm && _isMoving)
         {
-            var canvasPos = MainScene.ScreenToCanvas(mm.GlobalPosition);
-            Vector2 delta = canvasPos - _dragStartPos;
+            Vector2 currentPos = MainScene.GetCanvasPosition(mm.Position);
+            Vector2 delta = currentPos - _startPos;
             
-            // En una implementación completa, esto movería el contenido de la capa
-            // Por ahora, solo mostramos feedback visual
-            GD.Print($"Moviendo: {delta}");
+            // Aquí se implementaría el movimiento real de la capa
+            // Por simplicidad, solo actualizamos la posición inicial
+            _startPos = currentPos;
         }
     }
 }

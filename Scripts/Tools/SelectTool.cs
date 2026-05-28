@@ -1,42 +1,41 @@
 using Godot;
+using PhotoGodot.Core;
 
 namespace PhotoGodot.Tools;
 
-public partial class SelectTool : Core.BaseTool
+public partial class SelectTool : BaseTool
 {
-    public SelectTool()
-    {
-        ToolName = "Select";
-    }
-
-    private Vector2 _selectionStart = Vector2.Zero;
-    private Rect2 _currentSelection = Rect2.Zero;
     private bool _isSelecting = false;
+    private Vector2 _startPos;
+    private Rect2 _selection;
+
+    public override void OnActivate()
+    {
+        GD.Print("⬜ Selección activada");
+    }
 
     public override void OnInput(InputEvent e)
     {
-        if (e is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+        if (e is InputEventMouseButton mb)
         {
-            var canvasPos = MainScene.ScreenToCanvas(mb.GlobalPosition);
+            Vector2 pos = MainScene.GetCanvasPosition(mb.Position);
             
-            if (mb.Pressed)
+            if (mb.ButtonIndex == MouseButton.Left && mb.Pressed)
             {
-                _selectionStart = canvasPos;
                 _isSelecting = true;
-                _currentSelection = new Rect2(canvasPos, Vector2.Zero);
+                _startPos = pos;
+                _selection = new Rect2(pos, Vector2.Zero);
             }
-            else if (_isSelecting)
+            else if (mb.ButtonIndex == MouseButton.Left && !mb.Pressed)
             {
                 _isSelecting = false;
-                GD.Print($"Selección creada: {_currentSelection}");
-                History.SaveState("Selección completada");
+                GD.Print($"Selección: {_selection.Size}");
             }
         }
         else if (e is InputEventMouseMotion mm && _isSelecting)
         {
-            var canvasPos = MainScene.ScreenToCanvas(mm.GlobalPosition);
-            Vector2 size = canvasPos - _selectionStart;
-            _currentSelection = new Rect2(_selectionStart, size).Abs();
+            Vector2 currentPos = MainScene.GetCanvasPosition(mm.Position);
+            _selection = new Rect2(_startPos, currentPos - _startPos);
         }
     }
 }

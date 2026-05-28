@@ -14,169 +14,356 @@ public partial class Main : Node2D
     // UI Components
     private MainUI _mainUI;
     
-    // Canvas de dibujo (Viewport para capturar input y dibujar)
-    private ColorRect _canvasContainer;
-    private Vector2 _canvasSize = new(1920, 1080);
-    private Vector2 _canvasOffset = Vector2.Zero;
-    private float _zoom = 1.0f;
+    // Canvas & Rendering
+    private ColorRect _canvasBackground;
+    private Node2D _canvasContainer;
+    private Sprite2D _gridSprite;
+    private Texture2D _gridTexture;
     
-    // Estado
-    private Color _currentColor = Colors.Black;
-    private float _brushSize = 10.0f;
-    private float _brushHardness = 1.0f;
-    private float _brushOpacity = 1.0f;
+    // State
+    private Vector2I _canvasSize = new(1920, 1080);
+    private float _zoom = 1.0f;
     private bool _showGrid = false;
+    private Color _primaryColor = Colors.Black;
+    private Color _secondaryColor = Colors.White;
+    
+    // Constants
+    private const float MIN_ZOOM = 0.1f;
+    private const float MAX_ZOOM = 10.0f;
     
     public LayerManager LayerManager => _layerManager;
-    public ToolManager ToolManager => _toolManager;
     public HistoryManager HistoryManager => _historyManager;
-    public Color CurrentColor { get => _currentColor; set => _currentColor = value; }
-    public float BrushSize { get => _brushSize; set => _brushSize = value; }
-    public float BrushHardness { get => _brushHardness; set => _brushHardness = value; }
-    public float BrushOpacity { get => _brushOpacity; set => _brushOpacity = value; }
-    public Vector2 CanvasOffset { get => _canvasOffset; set => _canvasOffset = value; }
-    public float Zoom { get => _zoom; set => _zoom = value; }
-    public bool ShowGrid { get => _showGrid; set => _showGrid = value; }
-    public ColorRect CanvasContainer => _canvasContainer;
-
+    public ToolManager ToolManager => _toolManager;
+    public Vector2I CanvasSize => _canvasSize;
+    public float Zoom => _zoom;
+    public Color PrimaryColor { get => _primaryColor; set => _primaryColor = value; }
+    public Color SecondaryColor { get => _secondaryColor; set => _secondaryColor = value; }
+    public bool ShowGrid => _showGrid;
+    
     public override void _Ready()
     {
-        GD.Print("Iniciando PhotoGodot Pro...");
+        GD.Print("🎨 PhotoGodot Pro v2.0 - Iniciando...");
         
-        // Configurar ventana
-        var window = GetWindow();
-        window.Size = new Vector2I(1280, 720);
-        window.Title = "PhotoGodot Pro v2.0";
+        SetupCanvas();
+        InitializeManagers();
+        RegisterTools();
+        CreateUI();
+        SetupInputMap();
         
-        // Crear contenedor principal
-        var mainContainer = new VBoxContainer();
-        AddChild(mainContainer);
+        GD.Print($"✅ Lienzo creado: {_canvasSize.X}x{_canvasSize.Y}");
+        GD.Print("✅ Sistema listo para dibujar");
+    }
+    
+    private void SetupCanvas()
+    {
+        // Fondo del canvas (área de trabajo)
+        _canvasBackground = new ColorRect();
+        _canvasBackground.Color = new Color(0.15f, 0.15f, 0.15f);
+        _canvasBackground.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        AddChild(_canvasBackground);
         
-        // Inicializar Managers
+        // Contenedor del canvas que se puede hacer zoom/pan
+        _canvasContainer = new Node2D();
+        _canvasContainer.Position = new Vector2(100, 50);
+        AddChild(_canvasContainer);
+        
+        // Grid texture (se genera programáticamente)
+        GenerateGridTexture();
+        _gridSprite = new Sprite2D();
+        _gridSprite.Texture = _gridTexture;
+        _gridSprite.Visible = false;
+        _canvasContainer.AddChild(_gridSprite);
+    }
+    
+    private void GenerateGridTexture()
+    {
+        int gridSize = 50;
+        int texSize = 512;
+        var image = Image.Create(texSize, texSize, false, Image.Format.Rgba8);
+        image.Fill(new Color(0, 0, 0, 0));
+        
+        for (int x = 0; x < texSize; x += gridSize)
+        {
+            for (int y = 0; y < texSize; y++)
+            {
+                if (y % gridSize < 2)
+                    image.SetPixel(x, y, new Color(1, 1, 1, 0.3f));
+            }
+        }
+        for (int y = 0; y < texSize; y += gridSize)
+        {
+            for (int x = 0; x < texSize; x++)
+            {
+                if (x % gridSize < 2)
+                    image.SetPixel(x, y, new Color(1, 1, 1, 0.3f));
+            }
+        }
+        
+        _gridTexture = ImageTexture.CreateFromImage(image);
+    }
+    
+    private void InitializeManagers()
+    {
+        // Layer Manager
         _layerManager = new LayerManager();
+        _layerManager.Name = "LayerManager";
         AddChild(_layerManager);
+        _layerManager.Setup(_canvasSize.X, _canvasSize.Y, Colors.White);
         
+        // History Manager
         _historyManager = new HistoryManager();
+        _historyManager.Name = "HistoryManager";
         AddChild(_historyManager);
         _historyManager.Setup(_layerManager);
         
+        // Tool Manager
         _toolManager = new ToolManager();
+        _toolManager.Name = "ToolManager";
         AddChild(_toolManager);
         
-        // Crear área de canvas (centro)
-        _canvasContainer = new ColorRect();
-        _canvasContainer.Color = new Color(0.15f, 0.15f, 0.15f); // Gris oscuro fondo
-        _canvasContainer.CustomMinimumSize = new Vector2(800, 600);
-        mainContainer.AddChild(_canvasContainer);
-        
-        // Crear UI completa
-        _mainUI = new MainUI();
-        AddChild(_mainUI);
-        _mainUI.Setup(this);
-        
-        // Registrar herramientas
-        RegisterTools();
-        
-        // Configurar lienzo inicial
-        _layerManager.Setup((int)_canvasSize.X, (int)_canvasSize.Y, Colors.White);
-        
-        GD.Print("PhotoGodot Pro listo. Herramienta activa: " + _toolManager.CurrentTool?.ToolName);
+        // Conectar señales
+        _layerManager.LayerListChanged += OnLayerListChanged;
+        _layerManager.ActiveLayerChanged += OnActiveLayerChanged;
     }
-
+    
     private void RegisterTools()
     {
         var brush = new BrushTool();
-        var eraser = new EraserTool();
-        var picker = new ColorPickerTool();
-        var move = new MoveTool();
-        var select = new SelectTool();
-        
+        brush.ToolName = "Pincel";
+        brush.ShortcutKey = "b";
         _toolManager.RegisterTool(brush);
+        
+        var eraser = new EraserTool();
+        eraser.ToolName = "Borrador";
+        eraser.ShortcutKey = "e";
         _toolManager.RegisterTool(eraser);
+        
+        var picker = new ColorPickerTool();
+        picker.ToolName = "Selector";
+        picker.ShortcutKey = "i";
         _toolManager.RegisterTool(picker);
+        
+        var move = new MoveTool();
+        move.ToolName = "Mover";
+        move.ShortcutKey = "v";
         _toolManager.RegisterTool(move);
+        
+        var select = new SelectTool();
+        select.ToolName = "Selección";
+        select.ShortcutKey = "m";
         _toolManager.RegisterTool(select);
+        
+        GD.Print($"✅ {_toolManager.GetToolByName("Pincel")?.ToolName}, {_toolManager.GetToolByName("Borrador")?.ToolName}, etc. registradas");
     }
-
+    
+    private void CreateUI()
+    {
+        _mainUI = new MainUI();
+        _mainUI.Initialize(this);
+        AddChild(_mainUI);
+        GD.Print("✅ Interfaz de usuario creada");
+    }
+    
+    private void SetupInputMap()
+    {
+        // Los atajos ya están definidos en project.godot
+        GD.Print("✅ Mapa de entrada configurado desde project.godot");
+    }
+    
     public override void _Input(InputEvent @event)
     {
         base._Input(@event);
         
-        // Manejar atajos globales
-        if (@event is InputEventKey key && key.Pressed)
+        if (@event is InputEventKey key && key.Pressed && !key.Echo)
         {
-            HandleGlobalShortcuts(key);
+            HandleKeyboardInput(key);
         }
         
-        // Pasar input al tool manager si es sobre el canvas
-        if (_canvasContainer.GetGlobalRect().HasPoint(GetGlobalMousePosition()))
+        if (@event is InputEventMouseButton mouseButton)
         {
-            _toolManager.HandleInput(@event);
+            HandleMouseInput(mouseButton);
         }
+        
+        if (@event is InputEventMouseMotion mouseMotion)
+        {
+            HandleMouseMotion(mouseMotion);
+        }
+        
+        // Pasar input al tool manager
+        _toolManager.HandleInput(@event);
     }
-
-    private void HandleGlobalShortcuts(InputEventKey key)
+    
+    private void HandleKeyboardInput(InputEventKey key)
     {
-        string keyCode = key.Keycode.ToString().ToLower();
-        
-        // Herramientas
-        if (key.Keycode == Key.B) _toolManager.SetTool("Brush");
-        else if (key.Keycode == Key.E) _toolManager.SetTool("Eraser");
-        else if (key.Keycode == Key.I) _toolManager.SetTool("ColorPicker");
-        else if (key.Keycode == Key.V) _toolManager.SetTool("Move");
-        else if (key.Keycode == Key.M) _toolManager.SetTool("Select");
-        else if (key.Keycode == Key.G) _showGrid = !_showGrid;
-        
-        // Undo/Redo
+        // Atajos globales
         if (key.CtrlPressed && key.Keycode == Key.Z)
         {
-            if (key.ShiftPressed) _historyManager.Redo();
-            else _historyManager.Undo();
+            if (key.ShiftPressed)
+                _historyManager.Redo();
+            else
+                _historyManager.Undo();
+            return;
         }
         
-        // Acciones
-        if (key.CtrlPressed && key.Keycode == Key.N) NewProject();
-        if (key.CtrlPressed && key.Keycode == Key.S) SaveProject();
-        if (key.CtrlPressed && key.Keycode == Key.E) ExportImage();
+        if (key.CtrlPressed && key.Keycode == Key.S)
+        {
+            ExportImage();
+            return;
+        }
+        
+        if (key.CtrlPressed && key.Keycode == Key.N)
+        {
+            NewFile();
+            return;
+        }
+        
+        if (key.CtrlPressed && key.Keycode == Key.E)
+        {
+            ExportImage();
+            return;
+        }
+        
+        if (key.CtrlPressed && key.Keycode == Key.Equal || key.CtrlPressed && key.Keycode == Key.Plus)
+        {
+            SetZoom(_zoom + 0.1f);
+            return;
+        }
+        
+        if (key.CtrlPressed && key.Keycode == Key.Minus)
+        {
+            SetZoom(_zoom - 0.1f);
+            return;
+        }
+        
+        if (key.Keycode == Key.G)
+        {
+            ToggleGrid();
+            return;
+        }
+        
+        // Cambiar herramientas con teclas
+        if (!key.CtrlPressed && !key.AltPressed && !key.ShiftPressed)
+        {
+            string keyCode = ((char)key.Unicode).ToString().ToLower();
+            
+            switch (keyCode)
+            {
+                case "b":
+                    _toolManager.SetTool("Pincel");
+                    break;
+                case "e":
+                    _toolManager.SetTool("Borrador");
+                    break;
+                case "i":
+                    _toolManager.SetTool("Selector");
+                    break;
+                case "v":
+                    _toolManager.SetTool("Mover");
+                    break;
+                case "m":
+                    _toolManager.SetTool("Selección");
+                    break;
+            }
+        }
     }
-
-    public void NewProject()
+    
+    private void HandleMouseInput(InputEventMouseButton mouseButton)
     {
+        Vector2 canvasPos = GetCanvasPosition(mouseButton.Position);
+        
+        if (mouseButton.ButtonIndex == MouseButton.WheelUp && mouseButton.CtrlPressed)
+        {
+            SetZoom(_zoom + 0.1f);
+        }
+        else if (mouseButton.ButtonIndex == MouseButton.WheelDown && mouseButton.CtrlPressed)
+        {
+            SetZoom(_zoom - 0.1f);
+        }
+        else if (mouseButton.ButtonIndex == MouseButton.Middle)
+        {
+            // Pan con rueda central (se implementaría con estado)
+        }
+    }
+    
+    private void HandleMouseMotion(InputEventMouseMotion mouseMotion)
+    {
+        // Actualizar posición del cursor en UI si es necesario
+        _mainUI?.UpdateCursorPosition(GetCanvasPosition(mouseMotion.Position));
+    }
+    
+    public Vector2 GetCanvasPosition(Vector2 screenPos)
+    {
+        return (screenPos - _canvasContainer.Position) / _zoom;
+    }
+    
+    public void SetZoom(float newZoom)
+    {
+        _zoom = Math.Clamp(newZoom, MIN_ZOOM, MAX_ZOOM);
+        _canvasContainer.Scale = new Vector2(_zoom, _zoom);
+        _mainUI?.UpdateZoomDisplay(_zoom);
+        GD.Print($"Zoom: {_zoom:P0}");
+    }
+    
+    public void ToggleGrid()
+    {
+        _showGrid = !_showGrid;
+        _gridSprite.Visible = _showGrid;
+        GD.Print($"Grid: {(_showGrid ? "ON" : "OFF")}");
+    }
+    
+    public void NewFile()
+    {
+        // Limpiar historial
         _historyManager.Clear();
-        _layerManager.Setup((int)_canvasSize.X, (int)_canvasSize.Y, Colors.White);
-        GD.Print("Nuevo proyecto creado");
+        
+        // Reiniciar capas
+        _layerManager.QueueFree();
+        _layerManager = new LayerManager();
+        _layerManager.Name = "LayerManager";
+        AddChild(_layerManager);
+        _layerManager.Setup(_canvasSize.X, _canvasSize.Y, Colors.White);
+        _historyManager.Setup(_layerManager);
+        
+        // Reconectar señales
+        _layerManager.LayerListChanged += OnLayerListChanged;
+        _layerManager.ActiveLayerChanged += OnActiveLayerChanged;
+        
+        // Re-registrar herramientas con nuevo manager
+        _toolManager.QueueFree();
+        _toolManager = new ToolManager();
+        _toolManager.Name = "ToolManager";
+        AddChild(_toolManager);
+        RegisterTools();
+        
+        GD.Print("📄 Nuevo archivo creado");
     }
-
-    public void SaveProject()
-    {
-        // Guardar configuración básica (en una versión completa se guardaría todo el estado)
-        GD.Print("Proyecto guardado (simulado)");
-    }
-
+    
     public void ExportImage()
     {
-        if (_layerManager.ActiveLayer == null) return;
-        
-        var image = _layerManager.ActiveLayer.ImageData.Duplicate();
-        string path = $"user://export_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-        Error err = image.SavePng(path);
-        
-        if (err == Error.Ok)
-            GD.Print($"Imagen exportada a: {path}");
-        else
-            GD.PrintErr("Error al exportar imagen");
+        var image = _layerManager.GetCompositedImage();
+        if (image != null)
+        {
+            string path = $"user://export_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+            image.SavePng(path);
+            GD.Print($"💾 Imagen exportada: {path}");
+            
+            // Mostrar notificación en UI
+            _mainUI?.ShowNotification("Imagen exportada exitosamente");
+        }
     }
     
-    public Vector2 ScreenToCanvas(Vector2 screenPos)
+    private void OnLayerListChanged()
     {
-        var rect = _canvasContainer.GetGlobalRect();
-        var localPos = screenPos - rect.Position - _canvasOffset;
-        return localPos / _zoom;
+        _mainUI?.UpdateLayerList();
     }
     
-    public void UpdateCanvasTransform()
+    private void OnActiveLayerChanged(Layer layer)
     {
-        // Notificar a la UI o componentes que necesitan redibujar
-        _mainUI?.RefreshLayerPanel();
+        _mainUI?.UpdateActiveLayer(layer);
+    }
+    
+    public void UpdateGridVisibility()
+    {
+        _gridSprite.Visible = _showGrid;
     }
 }

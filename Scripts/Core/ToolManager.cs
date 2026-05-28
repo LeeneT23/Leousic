@@ -39,7 +39,6 @@ public partial class ToolManager : Node
         _currentTool = tool;
         _currentTool.OnActivate();
         ToolChanged.Emit(tool);
-        GD.Print($"Herramienta activa: {tool.ToolName}");
     }
 
     public void HandleInput(InputEvent e)

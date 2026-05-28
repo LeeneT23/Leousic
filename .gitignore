@@ -1,31 +1,30 @@
 ```
-# Godot-specific ignores
-*.import
-*.uid
-export_presets.cfg
-.autoload_register
-.editor
-.godot/
-
 # Build artifacts
-*.so
-*.dll
-*.exe
-*.dylib
+*.import
+*.pidb
 *.pdb
-*.ilk
+*.meta
+*.sln.DotSettings
+*.userprefs
+.project
+*.user
+.vs/
+.vscode/
 
 # Dependencies
-res://.mono/
-mono_crash.*
-.user
+node_modules/
+vendor/
 
 # Logs
 *.log
-crashlog.txt
-
-# Temp files
 *.tmp
-*.bak
-~$*
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```

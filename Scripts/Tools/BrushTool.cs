@@ -1,99 +1,93 @@
 using Godot;
+using PhotoGodot.Core;
 
 namespace PhotoGodot.Tools;
 
-public partial class BrushTool : Core.BaseTool
+public partial class BrushTool : BaseTool
 {
-    public BrushTool()
-    {
-        ToolName = "Brush";
-    }
-
-    private float _size = 10f;
-    private float _hardness = 1f;
-    private float _opacity = 1f;
+    [Export] public float BrushSize { get; set; } = 10.0f;
+    [Export] public float BrushHardness { get; set; } = 1.0f;
+    [Export] public float Opacity { get; set; } = 1.0f;
+    
+    private Color _currentColor;
 
     public override void OnActivate()
     {
-        // Sincronizar con settings globales si existen
-        if (MainScene != null)
-        {
-            _size = MainScene.BrushSize;
-            _opacity = MainScene.BrushOpacity;
-            _hardness = MainScene.BrushHardness;
-        }
+        GD.Print("🖌️ Pincel activado");
     }
 
     public override void OnInput(InputEvent e)
     {
-        if (e is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+        if (e is InputEventMouseButton mb)
         {
-            var canvasPos = MainScene.ScreenToCanvas(mb.GlobalPosition);
+            Vector2 pos = MainScene.GetCanvasPosition(mb.Position);
             
-            if (mb.Pressed)
+            if (mb.ButtonIndex == MouseButton.Left && mb.Pressed)
             {
-                OnBeginDraw(canvasPos);
-                // Dibujar punto inicial
-                DrawStroke(LastPos, canvasPos, true);
+                _currentColor = MainScene.PrimaryColor;
+                OnBeginDraw(pos);
+                DrawAtPosition(pos);
             }
-            else if (IsDrawing)
+            else if (mb.ButtonIndex == MouseButton.Left && !mb.Pressed)
             {
-                OnEndDraw(canvasPos);
+                OnEndDraw(pos);
+            }
+            
+            if (mb.ButtonIndex == MouseButton.Right && mb.Pressed)
+            {
+                _currentColor = MainScene.SecondaryColor;
+                OnBeginDraw(pos);
+                DrawAtPosition(pos);
             }
         }
         else if (e is InputEventMouseMotion mm && IsDrawing)
         {
-            var canvasPos = MainScene.ScreenToCanvas(mm.GlobalPosition);
-            DrawStroke(LastPos, canvasPos);
-            LastPos = canvasPos;
+            Vector2 pos = MainScene.GetCanvasPosition(mm.Position);
+            DrawLine(LastPos, pos);
+            LastPos = pos;
         }
     }
 
-    private void DrawStroke(Vector2 from, Vector2 to, bool isPoint = false)
+    private void DrawAtPosition(Vector2 pos)
     {
         if (LayerManager.ActiveLayer == null) return;
-
-        float dist = from.DistanceTo(to);
-        int steps = isPoint ? 1 : (int)(dist / (_size * 0.5f));
         
-        for (int i = 0; i <= steps; i++)
+        int radius = (int)(BrushSize / 2);
+        for (int y = -radius; y <= radius; y++)
         {
-            float t = steps == 0 ? 0 : (float)i / steps;
-            Vector2 pos = from + (to - from) * t;
-            
-            // Dibujar círculo de pincel
-            int radius = (int)(_size / 2);
-            for (int y = -radius; y <= radius; y++)
+            for (int x = -radius; x <= radius; x++)
             {
-                for (int x = -radius; x <= radius; x++)
+                Vector2 offset = new(x, y);
+                if (offset.Length() <= radius)
                 {
-                    float dx = x;
-                    float dy = y;
-                    float distFromCenter = Mathf.Sqrt(dx * dx + dy * dy);
-                    
-                    if (distFromCenter <= radius)
+                    float alpha = 1.0f;
+                    if (BrushHardness < 1.0f)
                     {
-                        // Calcular dureza (feathering)
-                        float alphaFactor = 1f;
-                        if (_hardness < 1f)
-                        {
-                            float edgeDist = radius - distFromCenter;
-                            float softEdgeWidth = radius * (1f - _hardness);
-                            if (softEdgeWidth > 0 && edgeDist < softEdgeWidth)
-                            {
-                                alphaFactor = edgeDist / softEdgeWidth;
-                            }
-                        }
-                        
-                        Color brushColor = MainScene.CurrentColor;
-                        brushColor.A *= _opacity * alphaFactor;
-                        
-                        LayerManager.ActiveLayer.DrawPixel(pos + new Vector2(x, y), brushColor);
+                        float dist = offset.Length() / radius;
+                        alpha = Math.Max(0, 1.0f - dist * (1.0f - BrushHardness));
                     }
+                    
+                    LayerManager.ActiveLayer.DrawPixelWithAlpha(
+                        pos + offset, 
+                        _currentColor, 
+                        alpha * Opacity
+                    );
                 }
             }
         }
-        
         CommitChanges();
+    }
+
+    private void DrawLine(Vector2 from, Vector2 to)
+    {
+        float dist = from.DistanceTo(to);
+        int steps = (int)Math.Ceil(dist * 2);
+        
+        for (int i = 0; i <= steps; i++)
+        {
+            float t = (float)i / steps;
+            Vector2 pos = from.Lerp(to, t);
+            DrawAtPosition(pos);
+        }
     }
 }

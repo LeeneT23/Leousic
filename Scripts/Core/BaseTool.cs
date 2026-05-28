@@ -5,6 +5,7 @@ namespace PhotoGodot.Core;
 public abstract partial class BaseTool : Resource
 {
     [Export] public string ToolName { get; set; } = "Herramienta";
+    [Export] public string ShortcutKey { get; set; } = "";
     
     protected Main MainScene { get; private set; } = null!;
     protected LayerManager LayerManager { get; private set; } = null!;
