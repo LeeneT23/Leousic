@@ -1,37 +1,47 @@
 using Godot;
 
-namespace PhotoGodot.Tools;
-
-public partial class ColorPickerTool : Core.BaseTool
+public partial class ColorPickerTool : BaseTool
 {
-    public override string Name => "ColorPicker";
-    public override string Description => "Pick color from canvas (Eyedropper)";
-
-    protected override void OnLeftMouseDown(Vector2 position)
+    public ColorPickerTool()
+    {
+        _toolName = "ColorPicker";
+    }
+    
+    protected override void OnPressStart(Vector2 position)
     {
         PickColor(position);
     }
-
+    
+    protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
+    {
+        // Color picker only picks on click, not while dragging
+    }
+    
+    protected override void OnPressEnd(Vector2 position)
+    {
+        // Do nothing on release
+    }
+    
     private void PickColor(Vector2 position)
     {
-        if (LayerManager == null || LayerManager.ActiveLayer == null) return;
+        var compositedImage = _main.GetLayerManager().GetCompositedImage();
+        if (compositedImage == null) return;
         
-        var layerPos = ScreenToLayer(position);
-        int x = (int)layerPos.X;
-        int y = (int)layerPos.Y;
+        int x = (int)position.X;
+        int y = (int)position.Y;
         
-        var layer = LayerManager.ActiveLayer;
-        if (x >= 0 && x < layer.Width && y >= 0 && y < layer.Height)
+        if (x >= 0 && x < compositedImage.GetWidth() && 
+            y >= 0 && y < compositedImage.GetHeight())
         {
-            var color = layer.Image.GetPixel(x, y);
+            Color pickedColor = compositedImage.GetPixel(x, y);
+            _main.SetPrimaryColor(pickedColor);
             
-            // Set as primary color
-            if (ToolManager != null)
+            GD.Print($"Color picked: {pickedColor.ToHtml()}");
+            
+            if (_main.GetMainUI() != null)
             {
-                ToolManager.SetPrimaryColor(color);
+                _main.GetMainUI().UpdateColorPicker(pickedColor);
             }
-            
-            GD.Print($"[ColorPicker] Picked: {color.ToHtml()}");
         }
     }
 }

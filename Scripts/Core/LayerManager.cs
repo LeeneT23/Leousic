@@ -1,94 +1,59 @@
 using Godot;
-using System;
 using System.Collections.Generic;
-
-namespace PhotoGodot.Core;
 
 public partial class LayerManager : Node
 {
-    private readonly List<Layer> _layers = new();
+    private Main _main;
+    private List<Layer> _layers = new();
     private int _activeLayerIndex = -1;
+    private int _canvasWidth;
+    private int _canvasHeight;
     
-    public int Width { get; private set; }
-    public int Height { get; private set; }
     public int LayerCount => _layers.Count;
-    public int ActiveLayerIndex 
-    { 
-        get => _activeLayerIndex;
-        set
-        {
-            if (value >= 0 && value < _layers.Count)
-            {
-                _activeLayerIndex = value;
-                OnActiveLayerChanged?.Invoke(_activeLayerIndex);
-            }
-        }
+    public int ActiveLayerIndex => _activeLayerIndex;
+    public Layer ActiveLayer => _activeLayerIndex >= 0 && _activeLayerIndex < _layers.Count ? _layers[_activeLayerIndex] : null;
+    
+    public void Initialize(Main main, int canvasWidth, int canvasHeight)
+    {
+        _main = main;
+        _canvasWidth = canvasWidth;
+        _canvasHeight = canvasHeight;
     }
     
-    public Layer? ActiveLayer => _activeLayerIndex >= 0 && _activeLayerIndex < _layers.Count 
-        ? _layers[_activeLayerIndex] 
-        : null;
-
-    public event Action<int>? OnActiveLayerChanged;
-    public event Action? OnLayersChanged;
-
-    public void Initialize(int width, int height)
+    public int CreateLayer(string name = "Layer")
     {
-        Width = width;
-        Height = height;
-        _layers.Clear();
-        _activeLayerIndex = -1;
+        var layer = new Layer(_canvasWidth, _canvasHeight, name);
+        _layers.Add(layer);
         
-        // Create initial background layer
-        AddLayer("Background");
+        if (_activeLayerIndex == -1)
+        {
+            _activeLayerIndex = 0;
+        }
+        else
+        {
+            _activeLayerIndex = _layers.Count - 1;
+        }
+        
+        GD.Print($"Layer created: {name} (Index: {_activeLayerIndex})");
+        UpdateUI();
+        return _layers.Count - 1;
     }
-
-    public Layer AddLayer(string name = "Layer")
+    
+    public void CreateLayerFromImage(Image image, string name = "Imported Layer")
     {
-        var layer = new Layer(Width, Height, name);
+        var layer = new Layer(image.GetWidth(), image.GetHeight(), name);
+        var layerImage = layer.GetImage();
+        layerImage.BlendRect(image, new Rect2i(0, 0, image.GetWidth(), image.GetHeight()), Vector2I.Zero);
         _layers.Add(layer);
         _activeLayerIndex = _layers.Count - 1;
-        
-        GD.Print($"[LayerManager] Added layer: {name} (Index: {_activeLayerIndex})");
-        OnLayersChanged?.Invoke();
-        OnActiveLayerChanged?.Invoke(_activeLayerIndex);
-        
-        return layer;
+        GD.Print($"Layer created from image: {name}");
+        UpdateUI();
     }
-
-    public Layer DuplicateLayer(int index)
-    {
-        if (index < 0 || index >= _layers.Count)
-            throw new ArgumentOutOfRangeException(nameof(index));
-        
-        var source = _layers[index];
-        var duplicate = new Layer(source.Image.Duplicate() as Image, $"{source.Name} copy");
-        duplicate.Visible = source.Visible;
-        duplicate.Opacity = source.Opacity;
-        duplicate.BlendMode = source.BlendMode;
-        
-        _layers.Insert(index + 1, duplicate);
-        _activeLayerIndex = index + 1;
-        
-        GD.Print($"[LayerManager] Duplicated layer: {duplicate.Name}");
-        OnLayersChanged?.Invoke();
-        OnActiveLayerChanged?.Invoke(_activeLayerIndex);
-        
-        return duplicate;
-    }
-
+    
     public void DeleteLayer(int index)
     {
-        if (index < 0 || index >= _layers.Count)
-            throw new ArgumentOutOfRangeException(nameof(index));
+        if (index < 0 || index >= _layers.Count) return;
         
-        if (_layers.Count <= 1)
-        {
-            GD.PrintErr("[LayerManager] Cannot delete the last layer");
-            return;
-        }
-        
-        var deletedName = _layers[index].Name;
         _layers.RemoveAt(index);
         
         if (_activeLayerIndex >= _layers.Count)
@@ -96,16 +61,24 @@ public partial class LayerManager : Node
             _activeLayerIndex = _layers.Count - 1;
         }
         
-        GD.Print($"[LayerManager] Deleted layer: {deletedName}");
-        OnLayersChanged?.Invoke();
-        OnActiveLayerChanged?.Invoke(_activeLayerIndex);
+        GD.Print($"Layer deleted: Index {index}");
+        UpdateUI();
     }
-
+    
+    public void SetActiveLayer(int index)
+    {
+        if (index >= 0 && index < _layers.Count)
+        {
+            _activeLayerIndex = index;
+            GD.Print($"Active layer: {index} ({_layers[index].Name})");
+            UpdateUI();
+        }
+    }
+    
     public void MoveLayer(int fromIndex, int toIndex)
     {
         if (fromIndex < 0 || fromIndex >= _layers.Count || 
-            toIndex < 0 || toIndex >= _layers.Count)
-            return;
+            toIndex < 0 || toIndex >= _layers.Count) return;
         
         var layer = _layers[fromIndex];
         _layers.RemoveAt(fromIndex);
@@ -124,232 +97,116 @@ public partial class LayerManager : Node
             _activeLayerIndex++;
         }
         
-        GD.Print($"[LayerManager] Moved layer from {fromIndex} to {toIndex}");
-        OnLayersChanged?.Invoke();
-        OnActiveLayerChanged?.Invoke(_activeLayerIndex);
+        UpdateUI();
     }
-
+    
+    public void DuplicateLayer(int index)
+    {
+        if (index < 0 || index >= _layers.Count) return;
+        
+        var sourceLayer = _layers[index];
+        var newLayer = new Layer(_canvasWidth, _canvasHeight, $"{sourceLayer.Name} Copy");
+        var newImage = newLayer.GetImage();
+        newImage.BlendRect(sourceLayer.GetImage(), new Rect2i(0, 0, _canvasWidth, _canvasHeight), Vector2I.Zero);
+        newLayer.Opacity = sourceLayer.Opacity;
+        newLayer.Visible = sourceLayer.Visible;
+        
+        _layers.Insert(index + 1, newLayer);
+        _activeLayerIndex = index + 1;
+        
+        GD.Print($"Layer duplicated: {newLayer.Name}");
+        UpdateUI();
+    }
+    
     public void MergeDown(int index)
     {
-        if (index <= 0 || index >= _layers.Count)
-        {
-            GD.PrintErr("[LayerManager] Cannot merge down: invalid index or bottom layer");
-            return;
-        }
+        if (index <= 0 || index >= _layers.Count) return;
         
-        var top = _layers[index];
-        var bottom = _layers[index - 1];
+        var topLayer = _layers[index];
+        var bottomLayer = _layers[index - 1];
         
-        // Composite top onto bottom
-        for (int y = 0; y < Height; y++)
-        {
-            for (int x = 0; x < Width; x++)
-            {
-                var topPixel = top.Image.GetPixel(x, y);
-                var bottomPixel = bottom.Image.GetPixel(x, y);
-                
-                // Simple alpha blend
-                float a = topPixel.A;
-                Color blended = new Color(
-                    bottomPixel.R * (1 - a) + topPixel.R * a,
-                    bottomPixel.G * (1 - a) + topPixel.G * a,
-                    bottomPixel.B * (1 - a) + topPixel.B * a,
-                    Mathf.Max(bottomPixel.A, topPixel.A)
-                );
-                
-                bottom.Image.SetPixel(x, y, blended);
-            }
-        }
+        var bottomImage = bottomLayer.GetImage();
+        var topImage = topLayer.GetImage();
         
-        bottom.UpdateTexture();
+        bottomImage.BlendRect(topImage, new Rect2i(0, 0, _canvasWidth, _canvasHeight), Vector2I.Zero);
+        
         _layers.RemoveAt(index);
+        _activeLayerIndex = index - 1;
         
-        if (_activeLayerIndex >= index)
-        {
-            _activeLayerIndex = Math.Max(0, _activeLayerIndex - 1);
-        }
-        
-        GD.Print($"[LayerManager] Merged layer {index} down");
-        OnLayersChanged?.Invoke();
-        OnActiveLayerChanged?.Invoke(_activeLayerIndex);
+        GD.Print($"Layer merged down: {topLayer.Name} -> {bottomLayer.Name}");
+        UpdateUI();
     }
-
-    public void FlattenImage()
+    
+    public void ClearAllLayers()
     {
-        if (_layers.Count <= 1) return;
-        
-        var result = new Layer(Width, Height, "Flattened");
-        
-        // Composite all layers from bottom to top
-        for (int i = _layers.Count - 1; i >= 0; i--)
-        {
-            var layer = _layers[i];
-            if (!layer.Visible) continue;
-            
-            for (int y = 0; y < Height; y++)
-            {
-                for (int x = 0; x < Width; x++)
-                {
-                    var current = result.Image.GetPixel(x, y);
-                    var above = layer.Image.GetPixel(x, y);
-                    
-                    float a = above.A;
-                    Color blended = new Color(
-                        current.R * (1 - a) + above.R * a,
-                        current.G * (1 - a) + above.G * a,
-                        current.B * (1 - a) + above.B * a,
-                        Mathf.Max(current.A, above.A)
-                    );
-                    
-                    result.Image.SetPixel(x, y, blended);
-                }
-            }
-        }
-        
         _layers.Clear();
-        _layers.Add(result);
-        _activeLayerIndex = 0;
-        
-        GD.Print("[LayerManager] Image flattened");
-        OnLayersChanged?.Invoke();
-        OnActiveLayerChanged?.Invoke(_activeLayerIndex);
+        _activeLayerIndex = -1;
+        GD.Print("All layers cleared");
     }
-
+    
     public Image GetCompositedImage()
     {
-        var result = Image.CreateEmpty(Width, Height, false, Image.Format.Rgba8);
+        if (_layers.Count == 0) return null;
+        
+        var result = Image.CreateEmpty(_canvasWidth, _canvasHeight, false, Image.Format.Rgba8);
         result.Fill(Colors.Transparent);
         
-        // Composite from bottom to top
-        for (int i = _layers.Count - 1; i >= 0; i--)
+        foreach (var layer in _layers)
         {
-            var layer = _layers[i];
-            if (!layer.Visible) continue;
-            
-            for (int y = 0; y < Height; y++)
+            if (layer.Visible)
             {
-                for (int x = 0; x < Width; x++)
-                {
-                    var current = result.GetPixel(x, y);
-                    var above = layer.Image.GetPixel(x, y);
-                    
-                    float a = above.A * layer.Opacity;
-                    Color blended = new Color(
-                        current.R * (1 - a) + above.R * a,
-                        current.G * (1 - a) + above.G * a,
-                        current.B * (1 - a) + above.B * a,
-                        Mathf.Max(current.A, above.A * layer.Opacity)
-                    );
-                    
-                    result.SetPixel(x, y, blended);
-                }
+                result.BlendRect(layer.GetImage(), new Rect2i(0, 0, _canvasWidth, _canvasHeight), Vector2I.Zero);
             }
         }
         
         return result;
     }
-
-    public Layer? GetLayer(int index)
+    
+    public void RestoreFromImage(Image image)
     {
-        if (index >= 0 && index < _layers.Count)
-            return _layers[index];
-        return null;
-    }
-
-    public IReadOnlyList<Layer> GetAllLayers() => _layers.AsReadOnly();
-
-    public void SetLayerVisibility(int index, bool visible)
-    {
-        if (index >= 0 && index < _layers.Count)
+        if (image == null || _layers.Count == 0) return;
+        
+        var activeLayer = ActiveLayer;
+        if (activeLayer != null)
         {
-            _layers[index].Visible = visible;
-            OnLayersChanged?.Invoke();
+            var layerImage = activeLayer.GetImage();
+            layerImage.BlendRect(image, new Rect2i(0, 0, image.GetWidth(), image.GetHeight()), Vector2I.Zero);
         }
     }
-
-    public void SetLayerOpacity(int index, float opacity)
+    
+    public void ExportToPNG(string path)
     {
-        if (index >= 0 && index < _layers.Count)
+        var compositedImage = GetCompositedImage();
+        if (compositedImage != null)
         {
-            _layers[index].Opacity = Mathf.Clamp(opacity, 0, 1);
-            _layers[index].UpdateTexture();
-            OnLayersChanged?.Invoke();
+            compositedImage.SavePng(path);
+            GD.Print($"Exported to PNG: {path}");
         }
     }
-
-    public void SetLayerBlendMode(int index, Layer.CanvasBlendMode mode)
+    
+    public void ApplyFilterToActiveLayer(System.Func<Color, Color> filterFunc)
     {
-        if (index >= 0 && index < _layers.Count)
-        {
-            _layers[index].BlendMode = mode;
-            OnLayersChanged?.Invoke();
-        }
-    }
-
-    public void RenameLayer(int index, string newName)
-    {
-        if (index >= 0 && index < _layers.Count)
-        {
-            _layers[index].Name = newName;
-            OnLayersChanged?.Invoke();
-        }
-    }
-
-    public byte[] SaveProject()
-    {
-        var data = new Dictionary<string, object>
-        {
-            ["width"] = Width,
-            ["height"] = Height,
-            ["activeLayer"] = _activeLayerIndex,
-            ["layers"] = new List<byte[]>()
-        };
+        if (ActiveLayer == null) return;
         
-        var layerData = data["layers"] as List<byte[]>;
-        foreach (var layer in _layers)
+        var image = ActiveLayer.GetImage();
+        for (int y = 0; y < image.GetHeight(); y++)
         {
-            layerData.Add(layer.SaveToBytes());
-        }
-        
-        return VarToBytes(data);
-    }
-
-    public void LoadProject(byte[] data)
-    {
-        var dict = BytesToVar(data) as Dictionary;
-        if (dict == null) return;
-        
-        Width = (int)dict["width"];
-        Height = (int)dict["height"];
-        _activeLayerIndex = (int)dict["activeLayer"];
-        
-        _layers.Clear();
-        var layerDataList = dict["layers"] as Godot.Collections.Array;
-        
-        if (layerDataList != null)
-        {
-            foreach (byte[] layerData in layerDataList)
+            for (int x = 0; x < image.GetWidth(); x++)
             {
-                var img = Image.New();
-                img.LoadPngFromBuffer(layerData);
-                _layers.Add(new Layer(img, "Layer"));
+                Color pixel = image.GetPixel(x, y);
+                Color filtered = filterFunc(pixel);
+                image.SetPixel(x, y, filtered);
             }
         }
         
-        GD.Print($"[LayerManager] Project loaded: {Width}x{Height}, {_layers.Count} layers");
-        OnLayersChanged?.Invoke();
-        OnActiveLayerChanged?.Invoke(_activeLayerIndex);
+        GD.Print($"Filter applied to: {ActiveLayer.Name}");
     }
-
-    private byte[] VarToBytes(Variant variant)
+    
+    private void UpdateUI()
     {
-        var Marshaller = new Godot.Marshalls();
-        return Marshaller.VarToBytes(variant);
-    }
-
-    private Variant BytesToVar(byte[] bytes)
-    {
-        var Marshaller = new Godot.Marshalls();
-        return Marshaller.BytesToVar(bytes);
+        if (_main.GetMainUI() != null)
+        {
+            _main.GetMainUI().UpdateLayersList();
+        }
     }
 }

@@ -1,23 +1,28 @@
 ```
 # Build artifacts
 *.import
-*.tmp
-temp/
+*.metadata
 
 # Godot specific
 .project
-.sconsign
-*.scn.import
-*.tres.import
-*.res.import
-export_presets.cfg
+.user
+.sln
+.csproj
+.vs/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Environment
+.env
+.env.local
+.env.*
 
 # Dependencies
-addons/
-*.import
-
-# Logs
-*.log
+node_modules/
+vendor/
 
 # OS generated files
 .DS_Store

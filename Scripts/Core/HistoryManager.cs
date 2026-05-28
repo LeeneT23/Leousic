@@ -1,113 +1,99 @@
 using Godot;
-using System;
 using System.Collections.Generic;
-
-namespace PhotoGodot.Core;
 
 public partial class HistoryManager : Node
 {
-    private readonly List<HistoryEntry> _history = new();
-    private readonly List<HistoryEntry> _redoStack = new();
-    private int _maxHistorySize = 100;
+    private Main _main;
+    private List<Image> _history = new();
+    private int _currentIndex = -1;
+    private int _maxHistorySize = 500;
     
-    public int MaxHistorySize
+    public int HistoryCount => _history.Count;
+    public int CurrentIndex => _currentIndex;
+    public bool CanUndo => _currentIndex > 0;
+    public bool CanRedo => _currentIndex < _history.Count - 1;
+    
+    public void Initialize(Main main, int maxHistorySize = 500)
     {
-        get => _maxHistorySize;
-        set
+        _main = main;
+        _maxHistorySize = maxHistorySize;
+    }
+    
+    public void SaveState(Image image)
+    {
+        if (image == null) return;
+        
+        // Remove any redo states
+        while (_history.Count > _currentIndex + 1)
         {
-            _maxHistorySize = value;
-            while (_history.Count > _maxHistorySize)
-            {
-                _history.RemoveAt(0);
-            }
+            var oldImage = _history[_history.Count - 1];
+            oldImage?.Dispose();
+            _history.RemoveAt(_history.Count - 1);
+        }
+        
+        // Save new state
+        var newState = image.Duplicate() as Image;
+        _history.Add(newState);
+        _currentIndex++;
+        
+        // Limit history size
+        while (_history.Count > _maxHistorySize)
+        {
+            var oldestImage = _history[0];
+            oldestImage?.Dispose();
+            _history.RemoveAt(0);
+            _currentIndex--;
+        }
+        
+        UpdateUI();
+    }
+    
+    public void Undo()
+    {
+        if (!CanUndo) return;
+        
+        _currentIndex--;
+        RestoreState();
+        UpdateUI();
+        GD.Print("Undo");
+    }
+    
+    public void Redo()
+    {
+        if (!CanRedo) return;
+        
+        _currentIndex++;
+        RestoreState();
+        UpdateUI();
+        GD.Print("Redo");
+    }
+    
+    private void RestoreState()
+    {
+        if (_currentIndex < 0 || _currentIndex >= _history.Count) return;
+        
+        var currentState = _history[_currentIndex];
+        if (currentState != null && _main.GetLayerManager() != null)
+        {
+            _main.GetLayerManager().RestoreFromImage(currentState);
         }
     }
     
-    public int CurrentStep => _history.Count;
-    public bool CanUndo => _history.Count > 0;
-    public bool CanRedo => _redoStack.Count > 0;
-
-    public class HistoryEntry
-    {
-        public string ActionName { get; set; } = "";
-        public byte[]? LayerData { get; set; }
-        public int LayerIndex { get; set; }
-        public string? Description { get; set; }
-        public DateTime Timestamp { get; set; } = DateTime.Now;
-    }
-
-    public void PushAction(string actionName, Layer layer, int layerIndex, string? description = null)
-    {
-        var entry = new HistoryEntry
-        {
-            ActionName = actionName,
-            LayerData = layer.SaveToBytes(),
-            LayerIndex = layerIndex,
-            Description = description ?? actionName
-        };
-        
-        _history.Add(entry);
-        _redoStack.Clear();
-        
-        if (_history.Count > _maxHistorySize)
-        {
-            _history.RemoveAt(0);
-        }
-        
-        GD.Print($"[History] {actionName}: {entry.Description}");
-    }
-
-    public void PushLayerAction(string actionName, int layerIndex, string? description = null)
-    {
-        var entry = new HistoryEntry
-        {
-            ActionName = actionName,
-            LayerIndex = layerIndex,
-            Description = description ?? actionName
-        };
-        
-        _history.Add(entry);
-        _redoStack.Clear();
-        
-        if (_history.Count > _maxHistorySize)
-        {
-            _history.RemoveAt(0);
-        }
-    }
-
-    public HistoryEntry? Undo()
-    {
-        if (!CanUndo) return null;
-        
-        var entry = _history[^1];
-        _history.RemoveAt(_history.Count - 1);
-        _redoStack.Add(entry);
-        
-        GD.Print($"[History] Undo: {entry.Description}");
-        return entry;
-    }
-
-    public HistoryEntry? Redo()
-    {
-        if (!CanRedo) return null;
-        
-        var entry = _redoStack[^1];
-        _redoStack.RemoveAt(_redoStack.Count - 1);
-        _history.Add(entry);
-        
-        GD.Print($"[History] Redo: {entry.Description}");
-        return entry;
-    }
-
     public void Clear()
     {
+        foreach (var image in _history)
+        {
+            image?.Dispose();
+        }
         _history.Clear();
-        _redoStack.Clear();
+        _currentIndex = -1;
     }
-
-    public void SaveState(LayerManager layerManager)
+    
+    private void UpdateUI()
     {
-        // Save complete state for complex operations
-        GD.Print("[History] State saved");
+        if (_main.GetMainUI() != null)
+        {
+            _main.GetMainUI().UpdateStatus($"Undo: {_currentIndex + 1}/{_history.Count}");
+        }
     }
 }

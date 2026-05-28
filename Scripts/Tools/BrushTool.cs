@@ -1,133 +1,118 @@
 using Godot;
-using System;
 
-namespace PhotoGodot.Tools;
-
-public partial class BrushTool : Core.BaseTool
+public partial class BrushTool : BaseTool
 {
-    public override string Name => "Brush";
-    public override string Description => "Draw with customizable brush";
+    public BrushTool()
+    {
+        _toolName = "Brush";
+    }
     
-    private bool _hasStartedDrawing = false;
-
-    protected override void OnActivate()
+    protected override void OnPressStart(Vector2 position)
     {
-        _hasStartedDrawing = false;
-    }
-
-    protected override void OnLeftMouseDown(Vector2 position)
-    {
-        _hasStartedDrawing = false;
         DrawAtPosition(position);
-        _hasStartedDrawing = true;
-        SaveState("Brush Stroke", "Drew with brush");
     }
-
+    
     protected override void OnDraw(Vector2 from, Vector2 to, Vector2 delta)
     {
-        if (!_hasStartedDrawing)
+        // Interpolate between points for smooth lines
+        float distance = to.DistanceTo(from);
+        int steps = Mathf.CeilToInt(distance / 2.0f);
+        
+        for (int i = 0; i <= steps; i++)
         {
-            DrawAtPosition(to);
-            _hasStartedDrawing = true;
-            return;
+            float t = (float)i / steps;
+            Vector2 interpolatedPos = from.Lerp(to, t);
+            DrawAtPosition(interpolatedPos);
         }
         
-        // Bresenham's line algorithm for smooth strokes
-        DrawLine(from, to);
+        SaveHistoryState();
     }
-
-    protected override void OnLeftMouseUp(Vector2 position)
+    
+    protected override void OnPressEnd(Vector2 position)
     {
-        _hasStartedDrawing = false;
+        SaveHistoryState();
     }
-
+    
     private void DrawAtPosition(Vector2 position)
     {
-        if (WorkingLayer == null) return;
+        if (_main.GetLayerManager().ActiveLayer == null) return;
         
-        var layerPos = ScreenToLayer(position);
-        int x = (int)layerPos.X;
-        int y = (int)layerPos.Y;
-        float radius = BrushSize / 2;
+        float brushSize = _main.GetBrushSize();
+        Color color = _main.GetPrimaryColor();
+        float opacity = _main.GetOpacity();
+        float hardness = _main.GetHardness();
         
-        if (Hardness >= 0.95f)
+        // Apply opacity to color
+        Color colorWithOpacity = new(color.R, color.G, color.B, opacity);
+        
+        var layer = _main.GetLayerManager().ActiveLayer;
+        
+        if (hardness >= 0.95f)
         {
-            // Hard brush - fill circle
-            for (int dy = -(int)Mathf.Ceil(radius); dy <= (int)Mathf.Ceil(radius); dy++)
-            {
-                for (int dx = -(int)Mathf.Ceil(radius); dx <= (int)Mathf.Ceil(radius); dx++)
-                {
-                    int px = x + dx;
-                    int py = y + dy;
-                    
-                    if (dx * dx + dy * dy <= radius * radius)
-                    {
-                        WorkingLayer.DrawPixel(px, py, PrimaryColor, Opacity);
-                    }
-                }
-            }
+            // Hard brush - solid circle
+            layer.DrawCircle(position, brushSize / 2, colorWithOpacity);
         }
         else
         {
-            // Soft brush - gradient falloff
-            float softnessRadius = radius * (1 - Hardness);
-            
-            for (int dy = -(int)Mathf.Ceil(radius); dy <= (int)Mathf.Ceil(radius); dy++)
+            // Soft brush - gradient effect
+            DrawSoftBrush(layer, position, brushSize, colorWithOpacity, hardness);
+        }
+    }
+    
+    private void DrawSoftBrush(Layer layer, Vector2 center, float size, Color color, float hardness)
+    {
+        int radius = (int)(size / 2);
+        int cx = (int)center.X;
+        int cy = (int)center.Y;
+        
+        for (int y = -radius; y <= radius; y++)
+        {
+            for (int x = -radius; x <= radius; x++)
             {
-                for (int dx = -(int)Mathf.Ceil(radius); dx <= (int)Mathf.Ceil(radius); dx++)
+                float distance = Mathf.Sqrt(x * x + y * y);
+                if (distance <= radius)
                 {
-                    int px = x + dx;
-                    int py = y + dy;
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    int px = cx + x;
+                    int py = cy + y;
                     
-                    if (dist <= radius)
+                    if (px >= 0 && px < layer.Width && py >= 0 && py < layer.Height)
                     {
-                        float alpha = Opacity;
+                        // Calculate alpha based on distance and hardness
+                        float normalizedDistance = distance / radius;
+                        float alpha;
                         
-                        if (dist > softnessRadius)
+                        if (normalizedDistance <= hardness)
                         {
-                            // Falloff zone
-                            float t = (dist - softnessRadius) / (radius - softnessRadius);
-                            alpha *= 1 - t;
+                            alpha = color.A;
                         }
-                        else if (Hardness > 0)
+                        else
                         {
-                            // Partial hardness
-                            float t = dist / softnessRadius;
-                            alpha *= 1 - t * (1 - Hardness);
+                            // Fade out from hardness edge to full radius
+                            float fadeRange = 1.0f - hardness;
+                            if (fadeRange > 0)
+                            {
+                                alpha = color.A * (1.0f - (normalizedDistance - hardness) / fadeRange);
+                            }
+                            else
+                            {
+                                alpha = 0;
+                            }
                         }
                         
-                        WorkingLayer.DrawPixel(px, py, PrimaryColor, alpha);
+                        Color pixelColor = new(color.R, color.G, color.B, alpha);
+                        layer.DrawPixel(px, py, pixelColor);
                     }
                 }
             }
         }
-        
-        WorkingLayer.UpdateTexture();
     }
-
-    private void DrawLine(Vector2 from, Vector2 to)
+    
+    private void SaveHistoryState()
     {
-        int x0 = (int)from.X;
-        int y0 = (int)from.Y;
-        int x1 = (int)to.X;
-        int y1 = (int)to.Y;
-        
-        int dx = Math.Abs(x1 - x0);
-        int dy = Math.Abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;
-        int sy = y0 < y1 ? 1 : -1;
-        int err = (dx > dy ? dx : -dy) / 2;
-        
-        while (true)
+        var compositedImage = _main.GetLayerManager().GetCompositedImage();
+        if (compositedImage != null)
         {
-            DrawAtPosition(new Vector2(x0, y0));
-            
-            if (x0 == x1 && y0 == y1) break;
-            
-            int e2 = err;
-            if (e2 > -dx) { err -= dy; x0 += sx; }
-            if (e2 < dy) { err += dx; y0 += sy; }
+            _main.GetHistoryManager().SaveState(compositedImage);
         }
     }
 }
